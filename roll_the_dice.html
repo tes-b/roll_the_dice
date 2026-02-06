@@ -62,13 +62,18 @@
     <h1>Roll The Dice</h1>
     
     <div class="header">
-        <div>라운드: <span id="round-num">1</span> / 20</div>
+        <div>스테이지: <span id="stage-num">1</span> / 10</div>
         <div style="color: #ffa502;">보유 골드: <span id="gold">0</span>G</div>
+    </div>
+
+    <div style="margin-bottom: 15px; padding: 15px; background-color: #f0f0f0; border-radius: 10px;">
+        <div style="color: #666; font-size: 0.9rem; margin-bottom: 8px;">목표 점수</div>
+        <div style="font-size: 1.2rem; color: #ff4757; font-weight: bold;"><span id="target-score">50</span> 점</div>
     </div>
     
     <div id="multiplier-ui" class="multiplier-badge">✨ NEXT ROLL x2 DOUBLE ✨</div>
     <div class="score-board" id="total-score">0</div>
-    <div style="margin-bottom: 20px; color: #666;">현재 누적 점수</div>
+    <div style="margin-bottom: 20px; color: #666;">현재 스테이지 점수 (남은 롤: <span id="rolls-left">5</span>/5)</div>
 
     <div id="dice-container" class="dice-container"></div>
 
@@ -92,9 +97,9 @@
 
 <div id="result-modal" class="modal-overlay">
     <div class="modal-content">
-        <div class="modal-title">Game Over!</div>
+        <div class="modal-title" id="modal-title">게임 완료!</div>
         <div class="modal-result">
-            최종 점수
+            <span id="modal-msg">모든 스테이지를 완료했습니다!</span>
             <b id="modal-final-score">0</b><br>
             획득한 골드: <span id="modal-final-gold">0</span>G
         </div>
@@ -104,27 +109,33 @@
 
 <script>
     const CONFIG = {
-        TOTAL_ROLLS: 20,
+        TOTAL_STAGES: 10,
+        ROLLS_PER_STAGE: 5,
         INITIAL_VALUE_COST: 3,
         INITIAL_RATIO_COST: 5,
         INITIAL_ADD_DICE_COST: 3,
         COST_INCREASE: 2,
         INITIAL_DICE_VALUE: 1,
-        INITIAL_RED_FACES: 3
+        INITIAL_RED_FACES: 3,
+        STAGE_TARGETS: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
     };
 
-    let score, gold, rollsLeft, diceState, isDoubleActive;
+    let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive;
     let currentCosts = {};
 
     const rollBtn = document.getElementById('roll-btn');
     const scoreEl = document.getElementById('total-score');
     const goldEl = document.getElementById('gold');
-    const roundEl = document.getElementById('round-num');
+    const stageEl = document.getElementById('stage-num');
+    const targetScoreEl = document.getElementById('target-score');
+    const rollsLeftEl = document.getElementById('rolls-left');
     const diceContainer = document.getElementById('dice-container');
     const multiplierUi = document.getElementById('multiplier-ui');
     const shopMsg = document.getElementById('shop-msg');
 
     const resultModal = document.getElementById('result-modal');
+    const modalTitle = document.getElementById('modal-title');
+    const modalMsg = document.getElementById('modal-msg');
     const modalScore = document.getElementById('modal-final-score');
     const modalGold = document.getElementById('modal-final-gold');
 
@@ -134,9 +145,10 @@
     const doubleBtn = document.getElementById('double-btn');
 
     function resetGame() {
-        score = 0;
-        gold = 0;
-        rollsLeft = CONFIG.TOTAL_ROLLS;
+        currentStage = 1;
+        stageScore = 0;
+        totalGold = 0;
+        rollsLeftInStage = CONFIG.ROLLS_PER_STAGE;
         isDoubleActive = false;
         currentCosts = { value: CONFIG.INITIAL_VALUE_COST, ratio: CONFIG.INITIAL_RATIO_COST, addDice: CONFIG.INITIAL_ADD_DICE_COST };
         diceState = [
@@ -145,11 +157,11 @@
             { value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES }
         ];
         multiplierUi.style.display = "none";
+        resultModal.style.display = "none";
         renderDice();
         updateUI();
         shopMsg.innerText = "";
         rollBtn.disabled = false;
-        resultModal.style.display = "none";
     }
 
     function renderDice() {
@@ -164,33 +176,52 @@
     }
 
     function updateUI() {
-        scoreEl.innerText = score;
-        goldEl.innerText = gold;
-        const currentRound = (CONFIG.TOTAL_ROLLS - rollsLeft) + 1;
-        roundEl.innerText = rollsLeft > 0 ? currentRound : CONFIG.TOTAL_ROLLS;
+        scoreEl.innerText = stageScore;
+        goldEl.innerText = totalGold;
+        stageEl.innerText = currentStage;
+        targetScoreEl.innerText = CONFIG.STAGE_TARGETS[currentStage - 1];
+        rollsLeftEl.innerText = rollsLeftInStage;
 
         valBtn.innerText = `눈금 강화 (${currentCosts.value}G)`;
         ratioBtn.innerText = `빨강 확률 (${currentCosts.ratio}G)`;
         addDiceBtn.innerText = `주사위 추가 (${currentCosts.addDice}G)`;
-        const dCost = currentRound;
+        const dCost = currentStage;
         doubleBtn.innerText = `더블 (${dCost}G)`;
 
-        valBtn.disabled = gold < currentCosts.value;
-        ratioBtn.disabled = gold < currentCosts.ratio || diceState.every(d => d.redFaces >= 6);
-        addDiceBtn.disabled = gold < currentCosts.addDice;
-        doubleBtn.disabled = isDoubleActive || gold < dCost;
+        valBtn.disabled = totalGold < currentCosts.value;
+        ratioBtn.disabled = totalGold < currentCosts.ratio || diceState.every(d => d.redFaces >= 6);
+        addDiceBtn.disabled = totalGold < currentCosts.addDice;
+        doubleBtn.disabled = isDoubleActive || totalGold < dCost;
     }
 
-    // 모달 표시 함수 추가
-    function showFinalResult() {
-        modalScore.innerText = score;
-        modalGold.innerText = gold;
+    function showFinalResult(isGameOver) {
+        modalScore.innerText = stageScore;
+        modalGold.innerText = totalGold;
+        
+        if (isGameOver) {
+            modalTitle.innerText = "Game Over!";
+            modalMsg.innerText = `스테이지 ${currentStage} 실패!<br>`;
+        } else {
+            modalTitle.innerText = "게임 완료!";
+            modalMsg.innerText = "모든 스테이지를 완료했습니다!<br>";
+        }
         resultModal.style.display = "flex";
     }
 
+    function advanceToNextStage() {
+        currentStage++;
+        stageScore = 0;
+        rollsLeftInStage = CONFIG.ROLLS_PER_STAGE;
+        isDoubleActive = false;
+        multiplierUi.style.display = "none";
+        renderDice();
+        updateUI();
+        showMsg(`스테이지 ${currentStage}로 진행!`);
+    }
+
     rollBtn.addEventListener('click', () => {
-        if (rollsLeft <= 0) return;
-        rollsLeft--;
+        if (rollsLeftInStage <= 0) return;
+        rollsLeftInStage--;
         rollBtn.disabled = true;
         document.querySelectorAll('.dice').forEach(el => el.classList.add('rolling'));
 
@@ -211,19 +242,36 @@
                 }
             });
             if (isDoubleActive) { turnScore *= 2; isDoubleActive = false; multiplierUi.style.display = "none"; }
-            score += turnScore; gold += turnGold;
+            stageScore += turnScore; 
+            totalGold += turnGold;
             updateUI();
-            if (rollsLeft > 0) {
-                rollBtn.disabled = false;
+
+            // 스테이지 클리어 조건 확인
+            const targetScore = CONFIG.STAGE_TARGETS[currentStage - 1];
+            if (stageScore >= targetScore) {
+                // 스테이지 클리어
+                setTimeout(() => {
+                    if (currentStage === CONFIG.TOTAL_STAGES) {
+                        // 모든 스테이지 완료
+                        showFinalResult(false);
+                    } else {
+                        advanceToNextStage();
+                        rollBtn.disabled = false;
+                    }
+                }, 600);
+            } else if (rollsLeftInStage <= 0) {
+                // 롤이 남아있지 않고 목표점수 미달 - 게임오버
+                setTimeout(() => { showFinalResult(true); }, 600);
             } else {
-                setTimeout(showFinalResult, 600); // 여기서 점수 할당 후 모달 표시
+                // 게임 계속
+                rollBtn.disabled = false;
             }
         }, 600);
     });
 
     function upgradeValue() {
-        if (gold >= currentCosts.value) {
-            gold -= currentCosts.value;
+        if (totalGold >= currentCosts.value) {
+            totalGold -= currentCosts.value;
             diceState.forEach(d => d.value++);
             currentCosts.value += CONFIG.COST_INCREASE;
             showMsg("모든 주사위 파워업!");
@@ -232,10 +280,10 @@
     }
 
     function upgradeRedRatio() {
-        if (gold >= currentCosts.ratio) {
+        if (totalGold >= currentCosts.ratio) {
             const targets = diceState.filter(d => d.redFaces < 6);
             if (targets.length > 0) {
-                gold -= currentCosts.ratio;
+                totalGold -= currentCosts.ratio;
                 targets[Math.floor(Math.random() * targets.length)].redFaces++;
                 currentCosts.ratio += CONFIG.COST_INCREASE;
                 showMsg("확률 증가 성공!");
@@ -245,8 +293,8 @@
     }
 
     function addDice() {
-        if (gold >= currentCosts.addDice) {
-            gold -= currentCosts.addDice;
+        if (totalGold >= currentCosts.addDice) {
+            totalGold -= currentCosts.addDice;
             diceState.push({ value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES });
             currentCosts.addDice += CONFIG.COST_INCREASE;
             renderDice();
@@ -256,9 +304,9 @@
     }
 
     function buyDouble() {
-        const cost = (CONFIG.TOTAL_ROLLS - rollsLeft) + 1;
-        if (gold >= cost) {
-            gold -= cost;
+        const cost = currentStage;
+        if (totalGold >= cost) {
+            totalGold -= cost;
             isDoubleActive = true;
             multiplierUi.style.display = "inline-block";
             showMsg("더블 적용!");
