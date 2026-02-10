@@ -59,9 +59,11 @@
         .dice.red { background-color: #ff4757; border-color: #ff6b81; box-shadow: 0 4px 0 #ee3545; }
         .dice.blue { background-color: #2f3542; border-color: #57606f; box-shadow: 0 4px 0 #1e242e; }
         .dice.rolling { animation: shake 0.2s infinite; }
+        .dice.calculating { transform: translateY(-8px); box-shadow: 0 12px 18px rgba(0,0,0,0.18); }
         @keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
 
         .score-board { font-size: 3.5rem; font-weight: bold; margin-bottom: 5px; color: #2f3542; }
+        .calc-status { min-height: 24px; margin-bottom: 8px; color: #57606f; font-size: 0.95rem; font-weight: 600; }
         .multiplier-badge { display: inline-block; padding: 6px 16px; background: #f1c40f; color: #2f3542; border-radius: 20px; font-size: 0.9rem; font-weight: bold; margin-bottom: 15px; display: none; box-shadow: 0 4px 15px rgba(241, 196, 15, 0.3); }
         
         button { padding: 12px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.2s; }
@@ -116,6 +118,7 @@
     
     <div id="multiplier-ui" class="multiplier-badge">✨ NEXT ROLL x2 DOUBLE ✨</div>
     <div class="score-board" id="total-score">0</div>
+    <div id="calc-status" class="calc-status"></div>
     <div style="margin-bottom: 20px; color: #666;">현재 스테이지 점수 (남은 롤: <span id="rolls-left">5</span>/5)</div>
 
     <div id="dice-container" class="dice-container"></div>
@@ -160,7 +163,10 @@
         COST_INCREASE: 2,
         INITIAL_DICE_VALUE: 1,
         INITIAL_RED_FACES: 3,
-        STAGE_TARGETS: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500]
+        STAGE_TARGETS: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500],
+        ROLL_ANIMATION_MS: 600,
+        SCORE_STEP_DELAY_MS: 300,
+        RESULT_CHECK_DELAY_MS: 600
     };
 
     let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive;
@@ -174,6 +180,7 @@
     const rollsLeftEl = document.getElementById('rolls-left');
     const diceContainer = document.getElementById('dice-container');
     const multiplierUi = document.getElementById('multiplier-ui');
+    const calcStatusEl = document.getElementById('calc-status');
     const shopMsg = document.getElementById('shop-msg');
 
     const resultModal = document.getElementById('result-modal');
@@ -200,6 +207,7 @@
             { value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES }
         ];
         multiplierUi.style.display = "none";
+        calcStatusEl.innerText = "";
         resultModal.style.display = "none";
         renderDice();
         updateUI();
@@ -270,6 +278,63 @@
         doubleBtn.disabled = isDoubleActive || totalGold < dCost;
     }
 
+    // 애니메이션 타이밍 제어를 위해 재사용 가능한 대기 함수를 분리합니다.
+    function wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // 주사위 결과를 왼쪽에서 오른쪽 순서로 점수에 반영하며 표시합니다.
+    async function animateScoreCalculation(results) {
+        let turnScore = 0;
+        let turnGold = 0;
+
+        for (let i = 0; i < results.length; i++) {
+            const { dice, el, resultEl, isRed } = results[i];
+            el.classList.add('calculating');
+
+            if (isRed) {
+                resultEl.innerText = `+${dice.value}`;
+                el.classList.remove('blue');
+                el.classList.add('red');
+                turnScore += dice.value;
+                turnGold += dice.value;
+
+                const pop = document.createElement('span');
+                pop.className = 'gold-gain-pop';
+                pop.innerText = `+${dice.value}G`;
+                el.appendChild(pop);
+            } else {
+                resultEl.innerText = `-${dice.value}`;
+                el.classList.remove('red');
+                el.classList.add('blue');
+                turnScore -= dice.value;
+            }
+
+            // 현재까지의 누적 계산값을 즉시 보여줘서 연산 흐름을 눈으로 확인할 수 있게 합니다.
+            const previewScore = stageScore + turnScore;
+            const operatorText = turnScore >= 0 ? '+' : '';
+            calcStatusEl.innerText = `계산 중: ${stageScore} ${operatorText}${turnScore} = ${previewScore}`;
+            scoreEl.innerText = previewScore;
+            goldEl.innerText = totalGold + turnGold;
+
+            await wait(CONFIG.SCORE_STEP_DELAY_MS);
+            el.classList.remove('calculating');
+        }
+
+        if (isDoubleActive) {
+            turnScore *= 2;
+            isDoubleActive = false;
+            multiplierUi.style.display = "none";
+            calcStatusEl.innerText = `더블 적용! 이번 턴 점수 ${turnScore}`;
+            scoreEl.innerText = stageScore + turnScore;
+            await wait(CONFIG.SCORE_STEP_DELAY_MS);
+        }
+
+        stageScore += turnScore;
+        totalGold += turnGold;
+        calcStatusEl.innerText = `턴 완료: ${turnScore >= 0 ? '+' : ''}${turnScore}점, +${turnGold}G`;
+    }
+
     function showFinalResult(isGameOver) {
         modalScore.innerText = stageScore;
         modalGold.innerText = totalGold;
@@ -295,59 +360,52 @@
         showMsg(`스테이지 ${currentStage}로 진행!`);
     }
 
-    rollBtn.addEventListener('click', () => {
+    rollBtn.addEventListener('click', async () => {
         if (rollsLeftInStage <= 0) return;
         rollsLeftInStage--;
         rollBtn.disabled = true;
+        calcStatusEl.innerText = "주사위를 굴리는 중...";
         document.querySelectorAll('.dice').forEach(el => el.classList.add('rolling'));
 
-        setTimeout(() => {
-            let turnScore = 0;
-            let turnGold = 0;
-            diceState.forEach((dice, i) => {
-                const el = document.getElementById(`dice-${i}`);
-                const resultEl = el.querySelector('.dice-result');
-                el.classList.remove('rolling');
-                const isRed = Math.floor(Math.random() * 6) < dice.redFaces;
-                if (isRed) {
-                    resultEl.innerText = `+${dice.value}`;
-                    el.classList.remove('blue');
-                    el.classList.add('red');
-                    turnScore += dice.value; turnGold += dice.value; 
-                    const pop = document.createElement('span'); pop.className = 'gold-gain-pop'; pop.innerText = `+${dice.value}G`; el.appendChild(pop);
-                } else {
-                    resultEl.innerText = `-${dice.value}`;
-                    el.classList.remove('red');
-                    el.classList.add('blue');
-                    turnScore -= dice.value;
-                }
-            });
-            if (isDoubleActive) { turnScore *= 2; isDoubleActive = false; multiplierUi.style.display = "none"; }
-            stageScore += turnScore; 
-            totalGold += turnGold;
-            updateUI();
+        await wait(CONFIG.ROLL_ANIMATION_MS);
 
-            // 스테이지 클리어 조건 확인
-            const targetScore = CONFIG.STAGE_TARGETS[currentStage - 1];
-            if (stageScore >= targetScore) {
-                // 스테이지 클리어
-                setTimeout(() => {
-                    if (currentStage === CONFIG.TOTAL_STAGES) {
-                        // 모든 스테이지 완료
-                        showFinalResult(false);
-                    } else {
-                        advanceToNextStage();
-                        rollBtn.disabled = false;
-                    }
-                }, 600);
-            } else if (rollsLeftInStage <= 0) {
-                // 롤이 남아있지 않고 목표점수 미달 - 게임오버
-                setTimeout(() => { showFinalResult(true); }, 600);
-            } else {
-                // 게임 계속
-                rollBtn.disabled = false;
-            }
-        }, 600);
+        const rollResults = diceState.map((dice, i) => {
+            const el = document.getElementById(`dice-${i}`);
+            const resultEl = el.querySelector('.dice-result');
+            el.classList.remove('rolling');
+            return { dice, el, resultEl, isRed: Math.floor(Math.random() * 6) < dice.redFaces };
+        });
+
+        await animateScoreCalculation(rollResults);
+        updateUI();
+
+        // 스테이지 클리어 조건 확인
+        const targetScore = CONFIG.STAGE_TARGETS[currentStage - 1];
+        if (stageScore >= targetScore) {
+            // 스테이지 클리어
+            setTimeout(() => {
+                if (currentStage === CONFIG.TOTAL_STAGES) {
+                    // 모든 스테이지 완료
+                    showFinalResult(false);
+                } else {
+                    advanceToNextStage();
+                    rollBtn.disabled = false;
+                }
+                calcStatusEl.innerText = "";
+            }, CONFIG.RESULT_CHECK_DELAY_MS);
+        } else if (rollsLeftInStage <= 0) {
+            // 롤이 남아있지 않고 목표점수 미달 - 게임오버
+            setTimeout(() => {
+                showFinalResult(true);
+                calcStatusEl.innerText = "";
+            }, CONFIG.RESULT_CHECK_DELAY_MS);
+        } else {
+            // 게임 계속
+            rollBtn.disabled = false;
+            setTimeout(() => {
+                if (rollBtn.disabled === false) calcStatusEl.innerText = "";
+            }, CONFIG.RESULT_CHECK_DELAY_MS);
+        }
     });
 
     function upgradeValue() {
