@@ -12,7 +12,50 @@
         
         /* 주사위 스타일 */
         .dice-container { display: flex; justify-content: center; gap: 10px; margin: 30px 0; flex-wrap: wrap; min-height: 90px; }
-        .dice { width: 70px; height: 70px; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; font-weight: bold; color: white; transition: 0.2s; border: 4px solid #ddd; position: relative; }
+        .dice { width: 70px; height: 70px; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.5rem; font-weight: bold; color: white; transition: 0.2s; border: 4px solid #ddd; position: relative; overflow: visible; }
+        .dice-result { pointer-events: none; }
+        .dice-faces {
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 10px);
+            transform: translateX(-50%) translateY(4px);
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px;
+            width: 132px;
+            padding: 8px;
+            border-radius: 10px;
+            background: rgba(47, 53, 66, 0.95);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+            z-index: 20;
+        }
+        .dice-faces::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            top: 100%;
+            transform: translateX(-50%);
+            border: 6px solid transparent;
+            border-top-color: rgba(47, 53, 66, 0.95);
+        }
+        .dice:hover .dice-faces {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .face-cell {
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: white;
+            padding: 4px 2px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .face-cell.red { background-color: #ff4757; }
+        .face-cell.blue { background-color: #57606f; }
         .dice.red { background-color: #ff4757; border-color: #ff6b81; box-shadow: 0 4px 0 #ee3545; }
         .dice.blue { background-color: #2f3542; border-color: #57606f; box-shadow: 0 4px 0 #1e242e; }
         .dice.rolling { animation: shake 0.2s infinite; }
@@ -170,8 +213,41 @@
             const div = document.createElement('div');
             div.id = `dice-${i}`;
             div.className = "dice blue";
-            div.innerText = "?";
+
+            const result = document.createElement('span');
+            result.className = 'dice-result';
+            result.innerText = "?";
+
+            const faces = buildDiceFacesPreview(diceState[i]);
+
+            div.appendChild(result);
+            div.appendChild(faces);
             diceContainer.appendChild(div);
+        });
+    }
+
+    function buildDiceFacesPreview(dice) {
+        const preview = document.createElement('div');
+        preview.className = 'dice-faces';
+
+        for (let face = 1; face <= 6; face++) {
+            const faceCell = document.createElement('span');
+            const isRedFace = face <= dice.redFaces;
+            faceCell.className = `face-cell ${isRedFace ? 'red' : 'blue'}`;
+            faceCell.innerText = `${isRedFace ? '+' : '-'}${dice.value}`;
+            preview.appendChild(faceCell);
+        }
+
+        return preview;
+    }
+
+    function refreshDiceFacePreviews() {
+        diceState.forEach((dice, i) => {
+            const el = document.getElementById(`dice-${i}`);
+            if (!el) return;
+            const oldPreview = el.querySelector('.dice-faces');
+            if (oldPreview) oldPreview.remove();
+            el.appendChild(buildDiceFacesPreview(dice));
         });
     }
 
@@ -230,14 +306,19 @@
             let turnGold = 0;
             diceState.forEach((dice, i) => {
                 const el = document.getElementById(`dice-${i}`);
+                const resultEl = el.querySelector('.dice-result');
                 el.classList.remove('rolling');
                 const isRed = Math.floor(Math.random() * 6) < dice.redFaces;
                 if (isRed) {
-                    el.innerText = `+${dice.value}`; el.className = "dice red";
+                    resultEl.innerText = `+${dice.value}`;
+                    el.classList.remove('blue');
+                    el.classList.add('red');
                     turnScore += dice.value; turnGold += dice.value; 
                     const pop = document.createElement('span'); pop.className = 'gold-gain-pop'; pop.innerText = `+${dice.value}G`; el.appendChild(pop);
                 } else {
-                    el.innerText = `-${dice.value}`; el.className = "dice blue";
+                    resultEl.innerText = `-${dice.value}`;
+                    el.classList.remove('red');
+                    el.classList.add('blue');
                     turnScore -= dice.value;
                 }
             });
@@ -274,6 +355,7 @@
             totalGold -= currentCosts.value;
             diceState.forEach(d => d.value++);
             currentCosts.value += CONFIG.COST_INCREASE;
+            refreshDiceFacePreviews();
             showMsg("모든 주사위 파워업!");
             updateUI();
         }
@@ -286,6 +368,7 @@
                 totalGold -= currentCosts.ratio;
                 targets[Math.floor(Math.random() * targets.length)].redFaces++;
                 currentCosts.ratio += CONFIG.COST_INCREASE;
+                refreshDiceFacePreviews();
                 showMsg("확률 증가 성공!");
                 updateUI();
             }
