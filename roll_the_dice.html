@@ -60,6 +60,8 @@
         .dice.blue { background-color: #2f3542; border-color: #57606f; box-shadow: 0 4px 0 #1e242e; }
         .dice.rolling { animation: shake 0.2s infinite; }
         .dice.calculating { transform: translateY(-8px); box-shadow: 0 12px 18px rgba(0,0,0,0.18); }
+        .dice.drag-source { opacity: 0.5; }
+        .dice.drag-over { outline: 3px dashed #70a1ff; outline-offset: 4px; }
         @keyframes shake { 0% { transform: rotate(0deg); } 25% { transform: rotate(5deg); } 75% { transform: rotate(-5deg); } 100% { transform: rotate(0deg); } }
 
         .score-board { font-size: 3.5rem; font-weight: bold; margin-bottom: 5px; color: #2f3542; }
@@ -169,11 +171,13 @@
         STAGE_TARGETS: STAGE_TARGET_SCORES,
         ROLL_ANIMATION_MS: 600,
         SCORE_STEP_DELAY_MS: 300,
-        RESULT_CHECK_DELAY_MS: 600
+        RESULT_CHECK_DELAY_MS: 600,
+        DRAG_DROP_REORDER_DELAY_MS: 120
     };
 
     let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive;
     let currentCosts = {};
+    let draggingDiceIndex = null;
 
     const rollBtn = document.getElementById('roll-btn');
     const scoreEl = document.getElementById('total-score');
@@ -224,6 +228,9 @@
             const div = document.createElement('div');
             div.id = `dice-${i}`;
             div.className = "dice blue";
+            // 주사위 순서 변경을 위해 각 카드에 드래그 핸들링 정보를 설정합니다.
+            div.draggable = true;
+            div.dataset.index = String(i);
 
             const result = document.createElement('span');
             result.className = 'dice-result';
@@ -233,7 +240,70 @@
 
             div.appendChild(result);
             div.appendChild(faces);
+            bindDiceDragEvents(div);
             diceContainer.appendChild(div);
+        });
+    }
+
+    // 드래그/드롭 이벤트를 모듈화해 렌더링 시마다 같은 규칙을 재사용합니다.
+    function bindDiceDragEvents(diceEl) {
+        diceEl.addEventListener('dragstart', (event) => {
+            if (rollBtn.disabled) {
+                event.preventDefault();
+                return;
+            }
+
+            draggingDiceIndex = Number(diceEl.dataset.index);
+            event.dataTransfer.effectAllowed = 'move';
+            diceEl.classList.add('drag-source');
+        });
+
+        diceEl.addEventListener('dragover', (event) => {
+            if (draggingDiceIndex === null || rollBtn.disabled) return;
+            event.preventDefault();
+            diceEl.classList.add('drag-over');
+        });
+
+        diceEl.addEventListener('dragleave', () => {
+            diceEl.classList.remove('drag-over');
+        });
+
+        diceEl.addEventListener('drop', (event) => {
+            event.preventDefault();
+            const targetIndex = Number(diceEl.dataset.index);
+            reorderDice(draggingDiceIndex, targetIndex);
+        });
+
+        diceEl.addEventListener('dragend', () => {
+            clearDragStyles();
+        });
+    }
+
+    // 배열 재정렬을 한 곳에서 처리해 다른 입력 방식(버튼/키보드) 확장 시 재사용 가능하게 만듭니다.
+    function reorderDice(fromIndex, toIndex) {
+        if (rollBtn.disabled || fromIndex === null || toIndex === null || fromIndex === toIndex) {
+            clearDragStyles();
+            return;
+        }
+
+        const movedDice = diceState.splice(fromIndex, 1)[0];
+        diceState.splice(toIndex, 0, movedDice);
+        renderDice();
+        calcStatusEl.innerText = "주사위 순서를 변경했습니다.";
+        setTimeout(() => {
+            if (!rollBtn.disabled && calcStatusEl.innerText === "주사위 순서를 변경했습니다.") {
+                calcStatusEl.innerText = "";
+            }
+        }, CONFIG.DRAG_DROP_REORDER_DELAY_MS);
+
+        clearDragStyles();
+    }
+
+    // 드래그 중 적용된 시각 효과를 초기화해 UI 상태가 남지 않도록 합니다.
+    function clearDragStyles() {
+        draggingDiceIndex = null;
+        document.querySelectorAll('.dice').forEach((el) => {
+            el.classList.remove('drag-source', 'drag-over');
         });
     }
 
