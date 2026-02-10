@@ -154,8 +154,11 @@
 </div>
 
 <script>
+    // 스테이지 목표 점수를 한 곳에서 관리해 밸런스 조정이 쉽도록 분리합니다.
+    const STAGE_TARGET_SCORES = Object.freeze([3, 6, 12, 24, 48, 96, 192, 384, 768, 1536]);
+
     const CONFIG = {
-        TOTAL_STAGES: 10,
+        TOTAL_STAGES: STAGE_TARGET_SCORES.length,
         ROLLS_PER_STAGE: 5,
         INITIAL_VALUE_COST: 3,
         INITIAL_RATIO_COST: 5,
@@ -163,7 +166,7 @@
         COST_INCREASE: 2,
         INITIAL_DICE_VALUE: 1,
         INITIAL_RED_FACES: 3,
-        STAGE_TARGETS: [50, 100, 150, 200, 250, 300, 350, 400, 450, 500],
+        STAGE_TARGETS: STAGE_TARGET_SCORES,
         ROLL_ANIMATION_MS: 600,
         SCORE_STEP_DELAY_MS: 300,
         RESULT_CHECK_DELAY_MS: 600
