@@ -8,7 +8,22 @@
         body { font-family: 'Pretendard', sans-serif; background-color: #f5f6fa; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .game-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 500px; text-align: center; position: relative; }
         h1 { color: #2f3542; margin-top: 0; margin-bottom: 20px; font-size: 2.5rem; letter-spacing: -1px; font-weight: 800; }
-        .header { display: flex; justify-content: space-between; margin-bottom: 20px; font-weight: bold; font-size: 1.1rem; }
+        .header { display: flex; justify-content: space-between; margin-bottom: 20px; font-weight: bold; font-size: 1.1rem; gap: 10px; }
+        .header-right { display: flex; align-items: center; gap: 10px; }
+        .menu-btn {
+            width: 40px;
+            height: 40px;
+            padding: 0;
+            background: #2f3542;
+            color: white;
+            font-size: 1.2rem;
+            border-radius: 12px;
+            border-bottom: 3px solid #1e242e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .menu-btn:active { transform: translateY(1px); border-bottom-width: 2px; }
         
         /* 주사위 스타일 */
         .dice-container { display: flex; justify-content: center; gap: 10px; margin: 30px 0; flex-wrap: wrap; min-height: 90px; }
@@ -88,8 +103,6 @@
         .upgrade-btn:active:not(:disabled) { transform: translateY(1px); border-bottom-width: 2px; }
         .upgrade-btn:disabled { background-color: #dfe4ea; color: #a4b0be; border-bottom: none; cursor: not-allowed; }
         
-        #reset-btn { margin-top: 20px; background-color: #ff4757; color: white; width: 100%; font-size: 1rem; }
-        
         .gold-gain-pop { position: absolute; top: -25px; color: #ffa502; font-size: 1.2rem; font-weight: bold; animation: fadeUp 1s forwards; text-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         @keyframes fadeUp { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-30px); } }
 
@@ -114,6 +127,27 @@
         .draft-face.neg { background: #57606f; }
         .draft-face.neu { background: #2f3542; }
         #draft-confirm-btn:disabled { background: #dfe4ea; color: #a4b0be; cursor: not-allowed; }
+
+        .menu-modal-content { width: 280px; padding: 24px; }
+        .menu-list { display: grid; gap: 10px; margin-top: 14px; }
+
+        /* 세로 모바일 환경에서는 모달이 화면에 잘 맞도록 폭/높이를 제어합니다. */
+        @media (max-width: 480px) and (orientation: portrait) {
+            .game-card { width: calc(100vw - 24px); padding: 20px 14px; border-radius: 16px; }
+            h1 { font-size: 2rem; }
+            .header { font-size: 0.95rem; }
+            .modal-overlay { align-items: flex-end; padding: 12px; box-sizing: border-box; }
+            .modal-content {
+                width: 100% !important;
+                max-height: 85vh;
+                overflow-y: auto;
+                border-radius: 18px;
+                padding: 24px 16px;
+            }
+            .modal-title { font-size: 1.5rem; }
+            .modal-result b { font-size: 2.2rem; }
+            .draft-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
     </style>
 </head>
 <body>
@@ -123,7 +157,10 @@
     
     <div class="header">
         <div>스테이지: <span id="stage-num">1</span> / 10</div>
-        <div style="color: #ffa502;">보유 골드: <span id="gold">0</span>G</div>
+        <div class="header-right">
+            <div style="color: #ffa502;">보유 골드: <span id="gold">0</span>G</div>
+            <button id="menu-btn" class="menu-btn" type="button" aria-label="게임 메뉴 열기">☰</button>
+        </div>
     </div>
 
     <div style="margin-bottom: 15px; padding: 15px; background-color: #f0f0f0; border-radius: 10px;">
@@ -153,7 +190,6 @@
         <button id="double-btn" class="upgrade-btn" onclick="buyDouble()"></button>
     </div>
 
-    <button id="reset-btn" onclick="resetGame()">🎮 새 게임</button>
 </div>
 
 
@@ -175,6 +211,17 @@
             획득한 골드: <span id="modal-final-gold">0</span>G
         </div>
         <button class="modal-btn" onclick="resetGame()">다시 하기</button>
+    </div>
+</div>
+
+<div id="menu-modal" class="modal-overlay">
+    <div class="modal-content menu-modal-content">
+        <div class="modal-title">게임 메뉴</div>
+        <div class="menu-list">
+            <button id="menu-continue-btn" class="modal-btn" type="button">계속하기</button>
+            <button id="menu-options-btn" class="modal-btn" type="button">옵션</button>
+            <button id="menu-newgame-btn" class="modal-btn" type="button">새게임</button>
+        </div>
     </div>
 </div>
 
@@ -255,7 +302,8 @@
         INITIAL_PICK_COUNT: 3,
         STAGE_REWARD_OPTION_COUNT: 3,
         STAGE_REWARD_PICK_COUNT: 1,
-        DICE_FACE_COUNT: 6
+        DICE_FACE_COUNT: 6,
+        MESSAGE_CLEAR_DELAY_MS: 2000
     };
 
     // 기본 주사위 면 구성을 상수로 분리해 파생 계산에서 재사용합니다.
@@ -297,10 +345,48 @@
     const modalScore = document.getElementById('modal-final-score');
     const modalGold = document.getElementById('modal-final-gold');
 
+    const menuBtn = document.getElementById('menu-btn');
+    const menuModal = document.getElementById('menu-modal');
+    const menuContinueBtn = document.getElementById('menu-continue-btn');
+    const menuOptionsBtn = document.getElementById('menu-options-btn');
+    const menuNewGameBtn = document.getElementById('menu-newgame-btn');
+
     const valBtn = document.getElementById('up-val-btn');
     const ratioBtn = document.getElementById('up-ratio-btn');
     const addDiceBtn = document.getElementById('add-dice-btn');
     const doubleBtn = document.getElementById('double-btn');
+
+    // 메뉴 모달 공통 닫기 동작을 함수로 분리해 버튼/배경 클릭에서 재사용합니다.
+    function closeMenuModal() {
+        menuModal.style.display = 'none';
+    }
+
+    // 우상단 햄버거 버튼에서 메뉴를 열고 각 항목 기능을 연결합니다.
+    function bindMenuEvents() {
+        menuBtn.addEventListener('click', () => {
+            menuModal.style.display = 'flex';
+        });
+
+        menuContinueBtn.addEventListener('click', () => {
+            closeMenuModal();
+        });
+
+        menuOptionsBtn.addEventListener('click', () => {
+            // 옵션 메뉴는 추후 기능 확장을 고려해 현재는 안내 메시지만 표시합니다.
+            showMsg('옵션 기능은 준비 중입니다.');
+        });
+
+        menuNewGameBtn.addEventListener('click', async () => {
+            closeMenuModal();
+            await resetGame();
+        });
+
+        menuModal.addEventListener('click', (event) => {
+            if (event.target === menuModal) {
+                closeMenuModal();
+            }
+        });
+    }
 
 
     // 문자열 면 정보를 기존 전투 로직(value/redFaces)으로 사용할 수 있게 숫자 데이터로 해석합니다.
@@ -463,6 +549,7 @@
         calcStatusEl.innerText = "시작 주사위를 선택하세요.";
         resultModal.style.display = "none";
         draftModal.style.display = "none";
+        closeMenuModal();
         renderDice();
         updateUI();
         shopMsg.innerText = "";
@@ -784,9 +871,10 @@
 
     function showMsg(msg) {
         shopMsg.innerText = msg;
-        setTimeout(() => { if(shopMsg.innerText === msg) shopMsg.innerText = ""; }, 2000);
+        setTimeout(() => { if(shopMsg.innerText === msg) shopMsg.innerText = ""; }, CONFIG.MESSAGE_CLEAR_DELAY_MS);
     }
 
+    bindMenuEvents();
     resetGame();
 </script>
 
