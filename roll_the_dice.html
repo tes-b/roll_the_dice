@@ -254,8 +254,12 @@
         INITIAL_DRAFT_COUNT: 6,
         INITIAL_PICK_COUNT: 3,
         STAGE_REWARD_OPTION_COUNT: 3,
-        STAGE_REWARD_PICK_COUNT: 1
+        STAGE_REWARD_PICK_COUNT: 1,
+        DICE_FACE_COUNT: 6
     };
+
+    // 기본 주사위 면 구성을 상수로 분리해 파생 계산에서 재사용합니다.
+    const DEFAULT_DICE_FACES = Object.freeze(['+1', '+1', '+1', '-1', '-1', '-1']);
 
     // 스테이지 진행도에 따라 선택 후보 등급을 확장하기 위한 기준값입니다.
     const STAGE_TIER_POOL = Object.freeze([
@@ -324,7 +328,9 @@
     // 카탈로그 주사위를 현재 런타임 구조로 변환해 기존 게임 로직과 호환되게 유지합니다.
     function createRuntimeDiceFromCatalog(catalogDice) {
         const parsedFaces = catalogDice.faces.map(parseFaceToken).filter((face) => !face.isMultiplier);
-        const numericFaces = parsedFaces.length > 0 ? parsedFaces : [{ value: 1 }, { value: 1 }, { value: 1 }, { value: -1 }, { value: -1 }, { value: -1 }];
+        const numericFaces = parsedFaces.length > 0
+            ? parsedFaces
+            : DEFAULT_DICE_FACES.map((faceToken) => parseFaceToken(faceToken));
         const positiveCount = numericFaces.filter((face) => face.value >= 0).length;
         const avgValue = Math.max(1, Math.round(numericFaces.reduce((acc, face) => acc + Math.abs(face.value), 0) / numericFaces.length));
 
@@ -347,6 +353,15 @@
     // 스테이지별 허용 주사위 등급 목록을 계산해 보상 드래프트 로직에서 재사용합니다.
     function getTierKeysByStage(stage) {
         return STAGE_TIER_POOL.filter((rule) => stage >= rule.minStage).map((rule) => rule.tierKey);
+    }
+
+    // 현재 주사위에서 실제 굴릴 면 목록을 계산합니다.
+    function getRuntimeFaces(dice) {
+        if (Array.isArray(dice.faces) && dice.faces.length === CONFIG.DICE_FACE_COUNT) {
+            return [...dice.faces];
+        }
+
+        return Array.from({ length: CONFIG.DICE_FACE_COUNT }, (_, index) => (index < dice.redFaces ? `+${dice.value}` : `-${dice.value}`));
     }
 
     // 재사용 가능한 주사위 선택 모달입니다.
@@ -541,17 +556,19 @@
         });
     }
 
+    // 미리보기에서도 실제 면 정보를 우선 노출해 G 면 등 특수 효과를 확인할 수 있게 합니다.
     function buildDiceFacesPreview(dice) {
         const preview = document.createElement('div');
         preview.className = 'dice-faces';
 
-        for (let face = 1; face <= 6; face++) {
+        const faces = getRuntimeFaces(dice);
+        faces.forEach((faceToken) => {
+            const parsedFace = parseFaceToken(faceToken);
             const faceCell = document.createElement('span');
-            const isRedFace = face <= dice.redFaces;
-            faceCell.className = `face-cell ${isRedFace ? 'red' : 'blue'}`;
-            faceCell.innerText = `${isRedFace ? '+' : '-'}${dice.value}`;
+            faceCell.className = `face-cell ${parsedFace.value >= 0 ? 'red' : 'blue'}`;
+            faceCell.innerText = parsedFace.raw;
             preview.appendChild(faceCell);
-        }
+        });
 
         return preview;
     }
@@ -590,37 +607,35 @@
         return new Promise(resolve => setTimeout(resolve, ms));
     }
 
-    // 주사위 결과를 왼쪽에서 오른쪽 순서로 점수에 반영하며 표시합니다.
+    // 주사위 결과를 왼쪽에서 오른쪽 순서로 점수/골드에 반영하며 표시합니다.
     async function animateScoreCalculation(results) {
         let turnScore = 0;
         let turnGold = 0;
 
         for (let i = 0; i < results.length; i++) {
-            const { dice, el, resultEl, isRed } = results[i];
+            const { el, resultEl, rolledFace } = results[i];
             el.classList.add('calculating');
 
-            if (isRed) {
-                resultEl.innerText = `+${dice.value}`;
-                el.classList.remove('blue');
-                el.classList.add('red');
-                turnScore += dice.value;
-                turnGold += dice.value;
+            const faceInfo = parseFaceToken(rolledFace);
+            resultEl.innerText = faceInfo.raw;
+            el.classList.remove('red', 'blue');
+            el.classList.add(faceInfo.value >= 0 ? 'red' : 'blue');
 
+            if (faceInfo.isGold) {
+                turnGold += faceInfo.value;
                 const pop = document.createElement('span');
                 pop.className = 'gold-gain-pop';
-                pop.innerText = `+${dice.value}G`;
+                pop.innerText = `${faceInfo.value >= 0 ? '+' : ''}${faceInfo.value}G`;
                 el.appendChild(pop);
             } else {
-                resultEl.innerText = `-${dice.value}`;
-                el.classList.remove('red');
-                el.classList.add('blue');
-                turnScore -= dice.value;
+                turnScore += faceInfo.value;
             }
 
             // 현재까지의 누적 계산값을 즉시 보여줘서 연산 흐름을 눈으로 확인할 수 있게 합니다.
             const previewScore = stageScore + turnScore;
-            const operatorText = turnScore >= 0 ? '+' : '';
-            calcStatusEl.innerText = `계산 중: ${stageScore} ${operatorText}${turnScore} = ${previewScore}`;
+            const scoreOperator = turnScore >= 0 ? '+' : '';
+            const goldOperator = turnGold >= 0 ? '+' : '';
+            calcStatusEl.innerText = `계산 중: 점수 ${stageScore} ${scoreOperator}${turnScore} = ${previewScore}, 골드 ${totalGold} ${goldOperator}${turnGold} = ${totalGold + turnGold}`;
             scoreEl.innerText = previewScore;
             goldEl.innerText = totalGold + turnGold;
 
@@ -679,8 +694,10 @@
         const rollResults = diceState.map((dice, i) => {
             const el = document.getElementById(`dice-${i}`);
             const resultEl = el.querySelector('.dice-result');
+            const runtimeFaces = getRuntimeFaces(dice);
+            const rolledFace = runtimeFaces[Math.floor(Math.random() * runtimeFaces.length)];
             el.classList.remove('rolling');
-            return { dice, el, resultEl, isRed: Math.floor(Math.random() * 6) < dice.redFaces };
+            return { dice, el, resultEl, rolledFace };
         });
 
         await animateScoreCalculation(rollResults);
