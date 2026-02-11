@@ -90,6 +90,31 @@
         
         .shop { margin-top: 20px; border-top: 2px solid #eee; padding-top: 20px; text-align: left; }
         .shop-title { font-size: 0.9rem; color: #777; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+        .phase-card { margin-top: 12px; }
+        .page-title { font-size: 1rem; font-weight: 800; color: #2f3542; margin-bottom: 10px; }
+        .page-panel { display: none; }
+        .page-panel.active { display: block; }
+        .sell-zone {
+            margin-top: 12px;
+            padding: 14px;
+            border: 2px dashed #ff6b81;
+            border-radius: 10px;
+            background: #fff5f7;
+            color: #ff4757;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-align: center;
+        }
+        .sell-zone.drag-over { background: #ffe3e9; }
+        .phase-next-btn {
+            width: 100%;
+            margin-top: 12px;
+            background: #3742fa;
+            color: white;
+            border-bottom: 3px solid #2f35b5;
+            font-size: 0.95rem;
+        }
+        .phase-next-btn:active { transform: translateY(1px); border-bottom-width: 2px; }
         
         .upgrade-btn { 
             background-color: #4834d4; 
@@ -163,31 +188,39 @@
         </div>
     </div>
 
-    <div style="margin-bottom: 15px; padding: 15px; background-color: #f0f0f0; border-radius: 10px;">
+    <div id="target-card" style="margin-bottom: 15px; padding: 15px; background-color: #f0f0f0; border-radius: 10px;">
         <div style="color: #666; font-size: 0.9rem; margin-bottom: 8px;">목표 점수</div>
         <div style="font-size: 1.2rem; color: #ff4757; font-weight: bold;"><span id="target-score">50</span> 점</div>
     </div>
-    
-    <div id="multiplier-ui" class="multiplier-badge">✨ NEXT ROLL x2 DOUBLE ✨</div>
-    <div class="score-board" id="total-score">0</div>
-    <div id="calc-status" class="calc-status"></div>
-    <div style="margin-bottom: 20px; color: #666;">현재 스테이지 점수 (남은 롤: <span id="rolls-left">5</span>/5)</div>
 
-    <div id="dice-container" class="dice-container"></div>
+    <div id="stage-page" class="page-panel active phase-card">
+        <div class="page-title">🎲 스테이지 페이지</div>
+        <div id="multiplier-ui" class="multiplier-badge">✨ NEXT ROLL x2 DOUBLE ✨</div>
+        <div class="score-board" id="total-score">0</div>
+        <div id="calc-status" class="calc-status"></div>
+        <div style="margin-bottom: 20px; color: #666;">현재 스테이지 점수 (남은 롤: <span id="rolls-left">5</span>/5)</div>
 
-    <div class="controls">
-        <button id="roll-btn">주사위 던지기</button>
+        <div id="dice-container" class="dice-container"></div>
+
+        <div class="controls">
+            <button id="roll-btn">주사위 던지기</button>
+            <button id="double-btn" class="upgrade-btn" type="button"></button>
+        </div>
     </div>
 
-    <div class="shop">
-        <div class="shop-title">
-            <span>🛠️ 강화 상점 (+2G 증가)</span>
-            <span id="shop-msg" style="color: #ff4757; font-size: 0.8rem; font-weight: bold;"></span>
+    <div id="shop-page" class="page-panel phase-card">
+        <div class="page-title">🛍️ 상점 페이지</div>
+        <div class="shop">
+            <div class="shop-title">
+                <span>🛠️ 강화 상점 (+2G 증가)</span>
+                <span id="shop-msg" style="color: #ff4757; font-size: 0.8rem; font-weight: bold;"></span>
+            </div>
+            <button id="up-val-btn" class="upgrade-btn" type="button"></button>
+            <button id="up-ratio-btn" class="upgrade-btn" type="button"></button>
+            <button id="add-dice-btn" class="upgrade-btn" type="button"></button>
+            <div id="sell-zone" class="sell-zone">판매 영역: 주사위를 여기에 드래그하면 판매됩니다.</div>
+            <button id="start-stage-btn" class="phase-next-btn" type="button">스테이지 시작</button>
         </div>
-        <button id="up-val-btn" class="upgrade-btn" onclick="upgradeValue()"></button>
-        <button id="up-ratio-btn" class="upgrade-btn" onclick="upgradeRedRatio()"></button>
-        <button id="add-dice-btn" class="upgrade-btn" onclick="addDice()"></button>
-        <button id="double-btn" class="upgrade-btn" onclick="buyDouble()"></button>
     </div>
 
 </div>
@@ -298,29 +331,38 @@
         SCORE_STEP_DELAY_MS: 300,
         RESULT_CHECK_DELAY_MS: 600,
         DRAG_DROP_REORDER_DELAY_MS: 120,
-        INITIAL_DRAFT_COUNT: 6,
-        INITIAL_PICK_COUNT: 3,
-        STAGE_REWARD_OPTION_COUNT: 3,
-        STAGE_REWARD_PICK_COUNT: 1,
         DICE_FACE_COUNT: 6,
-        MESSAGE_CLEAR_DELAY_MS: 2000
+        MESSAGE_CLEAR_DELAY_MS: 2000,
+        SHOP_UNLOCK_ROUND: 2,
+        DICE_OFFER_COUNT: 3,
+        DICE_OFFER_PICK_COUNT: 1,
+        DICE_TIER_WEIGHTS: Object.freeze([
+            Object.freeze({ tierKey: DICE_TIERS.TIER_1.key, weight: 80 }),
+            Object.freeze({ tierKey: DICE_TIERS.TIER_2.key, weight: 15 }),
+            Object.freeze({ tierKey: DICE_TIERS.TIER_3.key, weight: 4 }),
+            Object.freeze({ tierKey: DICE_TIERS.SPECIAL.key, weight: 1 })
+        ]),
+        SELL_GOLD_BY_TIER: Object.freeze({
+            [DICE_TIERS.TIER_1.key]: 1,
+            [DICE_TIERS.TIER_2.key]: 2,
+            [DICE_TIERS.TIER_3.key]: 3,
+            [DICE_TIERS.SPECIAL.key]: 4
+        })
     };
 
     // 기본 주사위 면 구성을 상수로 분리해 파생 계산에서 재사용합니다.
     const DEFAULT_DICE_FACES = Object.freeze(['+1', '+1', '+1', '-1', '-1', '-1']);
 
-    // 스테이지 진행도에 따라 선택 후보 등급을 확장하기 위한 기준값입니다.
-    const STAGE_TIER_POOL = Object.freeze([
-        Object.freeze({ minStage: 1, tierKey: DICE_TIERS.TIER_1.key }),
-        Object.freeze({ minStage: 4, tierKey: DICE_TIERS.TIER_2.key }),
-        Object.freeze({ minStage: 7, tierKey: DICE_TIERS.TIER_3.key }),
-        Object.freeze({ minStage: 10, tierKey: DICE_TIERS.SPECIAL.key })
-    ]);
-
-    let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive;
+    let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive, currentPage;
     let currentCosts = {};
     let draggingDiceIndex = null;
     let isDraftingDice = false;
+
+    const stagePageEl = document.getElementById('stage-page');
+    const shopPageEl = document.getElementById('shop-page');
+    const targetCardEl = document.getElementById('target-card');
+    const startStageBtn = document.getElementById('start-stage-btn');
+    const sellZoneEl = document.getElementById('sell-zone');
 
     const rollBtn = document.getElementById('roll-btn');
     const scoreEl = document.getElementById('total-score');
@@ -428,17 +470,38 @@
         };
     }
 
-    // 중복 허용 랜덤 추출을 위해 후보에서 랜덤 인덱스를 여러 번 선택합니다.
-    function pickRandomDiceWithReplacement(pool, count) {
+    // 가중치 표를 기반으로 주사위 등급을 추첨합니다.
+    function pickTierByWeight() {
+        const totalWeight = CONFIG.DICE_TIER_WEIGHTS.reduce((sum, item) => sum + item.weight, 0);
+        let randomPoint = Math.random() * totalWeight;
+
+        for (const tierRule of CONFIG.DICE_TIER_WEIGHTS) {
+            randomPoint -= tierRule.weight;
+            if (randomPoint <= 0) {
+                return tierRule.tierKey;
+            }
+        }
+
+        return DICE_TIERS.TIER_1.key;
+    }
+
+    // 전체 풀에서 가중치 확률로 주사위 옵션을 뽑아 선택 페이즈에 공급합니다.
+    function drawWeightedDiceOptions(count) {
         return Array.from({ length: count }, () => {
-            const index = Math.floor(Math.random() * pool.length);
-            return createRuntimeDiceFromCatalog(pool[index]);
+            const tierKey = pickTierByWeight();
+            const tierPool = DICE_CATALOG[tierKey] ?? DICE_CATALOG[DICE_TIERS.TIER_1.key];
+            const index = Math.floor(Math.random() * tierPool.length);
+            return createRuntimeDiceFromCatalog(tierPool[index]);
         });
     }
 
-    // 스테이지별 허용 주사위 등급 목록을 계산해 보상 드래프트 로직에서 재사용합니다.
-    function getTierKeysByStage(stage) {
-        return STAGE_TIER_POOL.filter((rule) => stage >= rule.minStage).map((rule) => rule.tierKey);
+    // 현재 페이즈에 맞게 상점/스테이지 화면을 전환합니다.
+    function setPage(pageType) {
+        currentPage = pageType;
+        const isStagePage = pageType === 'stage';
+        stagePageEl.classList.toggle('active', isStagePage);
+        shopPageEl.classList.toggle('active', !isStagePage);
+        targetCardEl.style.display = isStagePage ? 'block' : 'none';
     }
 
     // 현재 주사위에서 실제 굴릴 면 목록을 계산합니다.
@@ -507,34 +570,18 @@
         });
     }
 
-    async function runInitialDiceDraft() {
-        const tier1Pool = DICE_CATALOG[DICE_TIERS.TIER_1.key];
-        const options = pickRandomDiceWithReplacement(tier1Pool, CONFIG.INITIAL_DRAFT_COUNT);
+    async function runDiceSelectionPhase() {
+        const options = drawWeightedDiceOptions(CONFIG.DICE_OFFER_COUNT);
         const selected = await openDiceDraftModal({
-            title: '시작 주사위 선택',
-            description: `${CONFIG.INITIAL_DRAFT_COUNT}개 중 ${CONFIG.INITIAL_PICK_COUNT}개를 선택하세요.`,
+            title: '주사위 선택',
+            description: `${CONFIG.DICE_OFFER_COUNT}개 중 ${CONFIG.DICE_OFFER_PICK_COUNT}개를 선택해 덱에 추가하세요.`,
             options,
-            pickCount: CONFIG.INITIAL_PICK_COUNT
-        });
-
-        diceState = selected;
-        renderDice();
-        updateUI();
-        rollBtn.disabled = false;
-    }
-
-    async function runStageRewardDraft() {
-        const tierKeys = getTierKeysByStage(currentStage);
-        const pool = tierKeys.flatMap((tierKey) => DICE_CATALOG[tierKey]);
-        const options = pickRandomDiceWithReplacement(pool, CONFIG.STAGE_REWARD_OPTION_COUNT);
-        const selected = await openDiceDraftModal({
-            title: '스테이지 보상 주사위',
-            description: `${CONFIG.STAGE_REWARD_OPTION_COUNT}개 중 1개를 선택해 덱에 추가하세요.`,
-            options,
-            pickCount: CONFIG.STAGE_REWARD_PICK_COUNT
+            pickCount: CONFIG.DICE_OFFER_PICK_COUNT
         });
 
         diceState.push(selected[0]);
+        renderDice();
+        updateUI();
     }
 
     async function resetGame() {
@@ -545,17 +592,20 @@
         isDoubleActive = false;
         currentCosts = { value: CONFIG.INITIAL_VALUE_COST, ratio: CONFIG.INITIAL_RATIO_COST, addDice: CONFIG.INITIAL_ADD_DICE_COST };
         diceState = [];
+        currentPage = 'stage';
         multiplierUi.style.display = "none";
         calcStatusEl.innerText = "시작 주사위를 선택하세요.";
         resultModal.style.display = "none";
         draftModal.style.display = "none";
         closeMenuModal();
         renderDice();
+        setPage('stage');
         updateUI();
         shopMsg.innerText = "";
         rollBtn.disabled = true;
-        await runInitialDiceDraft();
+        await runDiceSelectionPhase();
         calcStatusEl.innerText = "";
+        rollBtn.disabled = false;
     }
 
     function renderDice() {
@@ -584,7 +634,7 @@
     // 드래그/드롭 이벤트를 모듈화해 렌더링 시마다 같은 규칙을 재사용합니다.
     function bindDiceDragEvents(diceEl) {
         diceEl.addEventListener('dragstart', (event) => {
-            if (rollBtn.disabled || isDraftingDice) {
+            if (isDraftingDice || (currentPage === 'stage' && rollBtn.disabled)) {
                 event.preventDefault();
                 return;
             }
@@ -595,7 +645,7 @@
         });
 
         diceEl.addEventListener('dragover', (event) => {
-            if (draggingDiceIndex === null || rollBtn.disabled || isDraftingDice) return;
+            if (draggingDiceIndex === null || isDraftingDice || currentPage !== 'stage' || rollBtn.disabled) return;
             event.preventDefault();
             diceEl.classList.add('drag-over');
         });
@@ -617,7 +667,7 @@
 
     // 배열 재정렬을 한 곳에서 처리해 다른 입력 방식(버튼/키보드) 확장 시 재사용 가능하게 만듭니다.
     function reorderDice(fromIndex, toIndex) {
-        if (rollBtn.disabled || isDraftingDice || fromIndex === null || toIndex === null || fromIndex === toIndex) {
+        if (currentPage !== 'stage' || rollBtn.disabled || isDraftingDice || fromIndex === null || toIndex === null || fromIndex === toIndex) {
             clearDragStyles();
             return;
         }
@@ -683,10 +733,19 @@
         const dCost = currentStage;
         doubleBtn.innerText = `더블 (${dCost}G)`;
 
-        valBtn.disabled = totalGold < currentCosts.value;
-        ratioBtn.disabled = totalGold < currentCosts.ratio || diceState.every(d => d.redFaces >= 6);
-        addDiceBtn.disabled = totalGold < currentCosts.addDice;
-        doubleBtn.disabled = isDoubleActive || totalGold < dCost;
+        const isShopPage = currentPage === 'shop';
+        const isStagePage = currentPage === 'stage';
+        const canUseShop = isShopPage && currentStage >= CONFIG.SHOP_UNLOCK_ROUND;
+
+        valBtn.disabled = !canUseShop || totalGold < currentCosts.value;
+        ratioBtn.disabled = !canUseShop || totalGold < currentCosts.ratio || diceState.every(d => d.redFaces >= 6);
+        addDiceBtn.disabled = !canUseShop || totalGold < currentCosts.addDice;
+        doubleBtn.disabled = !isStagePage || isDoubleActive || totalGold < dCost;
+        startStageBtn.disabled = !isShopPage;
+
+        if (currentStage < CONFIG.SHOP_UNLOCK_ROUND) {
+            shopMsg.innerText = '상점은 1라운드 이후부터 이용 가능합니다.';
+        }
     }
 
     // 애니메이션 타이밍 제어를 위해 재사용 가능한 대기 함수를 분리합니다.
@@ -758,19 +817,88 @@
         resultModal.style.display = "flex";
     }
 
-    function advanceToNextStage() {
+    async function prepareNextStageFlow() {
         currentStage++;
         stageScore = 0;
         rollsLeftInStage = CONFIG.ROLLS_PER_STAGE;
         isDoubleActive = false;
         multiplierUi.style.display = "none";
+
+        calcStatusEl.innerText = "주사위를 선택하세요.";
+        await runDiceSelectionPhase();
+
+        if (currentStage >= CONFIG.SHOP_UNLOCK_ROUND) {
+            setPage('shop');
+            calcStatusEl.innerText = "상점에서 준비를 마친 뒤 스테이지를 시작하세요.";
+        } else {
+            setPage('stage');
+            calcStatusEl.innerText = "";
+        }
+
+        updateUI();
+        showMsg(`스테이지 ${currentStage} 준비 완료!`);
+    }
+
+    // 상점 판매 영역 드래그/드롭 이벤트를 연결합니다.
+    function bindSellZoneEvents() {
+        sellZoneEl.addEventListener('dragover', (event) => {
+            if (currentPage !== 'shop' || draggingDiceIndex === null) return;
+            event.preventDefault();
+            sellZoneEl.classList.add('drag-over');
+        });
+
+        sellZoneEl.addEventListener('dragleave', () => {
+            sellZoneEl.classList.remove('drag-over');
+        });
+
+        sellZoneEl.addEventListener('drop', (event) => {
+            event.preventDefault();
+            sellZoneEl.classList.remove('drag-over');
+            if (currentPage !== 'shop' || draggingDiceIndex === null) return;
+            sellDiceByIndex(draggingDiceIndex);
+            clearDragStyles();
+        });
+    }
+
+    // 상점 페이지 버튼 이벤트를 한 곳에서 등록합니다.
+    function bindShopPageEvents() {
+        valBtn.addEventListener('click', upgradeValue);
+        ratioBtn.addEventListener('click', upgradeRedRatio);
+        addDiceBtn.addEventListener('click', addDice);
+        doubleBtn.addEventListener('click', buyDouble);
+
+        startStageBtn.addEventListener('click', () => {
+            setPage('stage');
+            calcStatusEl.innerText = '';
+            updateUI();
+        });
+    }
+
+    // 등급별 판매 골드를 계산해 상점 판매 규칙을 일관되게 적용합니다.
+    function getSellPriceByDice(dice) {
+        return CONFIG.SELL_GOLD_BY_TIER[dice.tierKey] ?? 1;
+    }
+
+    // 마지막 1개 주사위는 남기고 판매 처리합니다.
+    function sellDiceByIndex(index) {
+        if (diceState.length <= 1) {
+            showMsg('마지막 1개의 주사위는 판매할 수 없습니다.');
+            return;
+        }
+
+        const soldDice = diceState[index];
+        if (!soldDice) return;
+
+        const sellGold = getSellPriceByDice(soldDice);
+        diceState.splice(index, 1);
+        totalGold += sellGold;
         renderDice();
         updateUI();
-        showMsg(`스테이지 ${currentStage}로 진행!`);
+        showMsg(`${sellGold}G에 판매했습니다.`);
     }
 
     rollBtn.addEventListener('click', async () => {
-        if (rollsLeftInStage <= 0 || isDraftingDice) return;
+        if (currentPage !== 'stage' || rollsLeftInStage <= 0 || isDraftingDice) return;
         rollsLeftInStage--;
         rollBtn.disabled = true;
         calcStatusEl.innerText = "주사위를 굴리는 중...";
@@ -799,11 +927,8 @@
                 return;
             }
 
-            calcStatusEl.innerText = "스테이지 보상 주사위를 선택하세요.";
-            await runStageRewardDraft();
-            advanceToNextStage();
+            await prepareNextStageFlow();
             rollBtn.disabled = false;
-            calcStatusEl.innerText = "";
             return;
         }
 
@@ -821,19 +946,21 @@
     });
 
     function upgradeValue() {
+        if (currentPage !== 'shop' || currentStage < CONFIG.SHOP_UNLOCK_ROUND) return;
         if (totalGold >= currentCosts.value) {
             totalGold -= currentCosts.value;
             diceState.forEach(d => d.value++);
             currentCosts.value += CONFIG.COST_INCREASE;
             refreshDiceFacePreviews();
-            showMsg("모든 주사위 파워업!");
+            showMsg("모든 주사위 눈금 강화!");
             updateUI();
         }
     }
 
     function upgradeRedRatio() {
+        if (currentPage !== 'shop' || currentStage < CONFIG.SHOP_UNLOCK_ROUND) return;
         if (totalGold >= currentCosts.ratio) {
-            const targets = diceState.filter(d => d.redFaces < 6);
+            const targets = diceState.filter(d => d.redFaces < CONFIG.DICE_FACE_COUNT);
             if (targets.length > 0) {
                 totalGold -= currentCosts.ratio;
                 targets[Math.floor(Math.random() * targets.length)].redFaces++;
@@ -846,11 +973,10 @@
     }
 
     function addDice() {
+        if (currentPage !== 'shop' || currentStage < CONFIG.SHOP_UNLOCK_ROUND) return;
         if (totalGold >= currentCosts.addDice) {
-            const tierKeys = getTierKeysByStage(currentStage);
-            const pool = tierKeys.flatMap((tierKey) => DICE_CATALOG[tierKey]);
             totalGold -= currentCosts.addDice;
-            diceState.push(pickRandomDiceWithReplacement(pool, 1)[0]);
+            diceState.push(drawWeightedDiceOptions(1)[0]);
             currentCosts.addDice += CONFIG.COST_INCREASE;
             renderDice();
             showMsg("주사위 추가 성공!");
@@ -859,6 +985,7 @@
     }
 
     function buyDouble() {
+        if (currentPage !== 'stage') return;
         const cost = currentStage;
         if (totalGold >= cost) {
             totalGold -= cost;
@@ -875,6 +1002,8 @@
     }
 
     bindMenuEvents();
+    bindShopPageEvents();
+    bindSellZoneEvents();
     resetGame();
 </script>
 
