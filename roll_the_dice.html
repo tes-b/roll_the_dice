@@ -101,6 +101,19 @@
         .modal-result { font-size: 1.2rem; color: #57606f; margin: 20px 0; line-height: 1.6; }
         .modal-result b { font-size: 3rem; color: #2ed573; display: block; margin-top: 10px; }
         .modal-btn { background-color: #2f3542; color: white; width: 100%; font-size: 1.1rem; padding: 15px; margin-top: 10px; border-bottom: 4px solid #000; }
+
+        /* 주사위 선택 모달 */
+        .draft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+        .draft-card { border: 2px solid #dfe4ea; border-radius: 12px; padding: 10px; cursor: pointer; transition: 0.2s; background: #f8f9fb; }
+        .draft-card:hover { transform: translateY(-2px); }
+        .draft-card.selected { border-color: #2ed573; box-shadow: 0 0 0 2px rgba(46, 213, 115, 0.2); }
+        .draft-card-title { font-size: 0.8rem; font-weight: 700; margin-bottom: 6px; color: #2f3542; }
+        .draft-faces { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .draft-face { font-size: 0.68rem; padding: 3px 0; border-radius: 5px; color: white; font-weight: 700; }
+        .draft-face.pos { background: #ff4757; }
+        .draft-face.neg { background: #57606f; }
+        .draft-face.neu { background: #2f3542; }
+        #draft-confirm-btn:disabled { background: #dfe4ea; color: #a4b0be; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -143,6 +156,16 @@
     <button id="reset-btn" onclick="resetGame()">🎮 새 게임</button>
 </div>
 
+
+<div id="dice-draft-modal" class="modal-overlay">
+    <div class="modal-content" style="width: 560px;">
+        <div class="modal-title" id="draft-title">주사위 선택</div>
+        <div id="draft-desc" style="font-size:0.9rem;color:#57606f;"></div>
+        <div id="draft-grid" class="draft-grid"></div>
+        <button id="draft-confirm-btn" class="modal-btn" style="margin-top:14px;">선택 완료</button>
+    </div>
+</div>
+
 <div id="result-modal" class="modal-overlay">
     <div class="modal-content">
         <div class="modal-title" id="modal-title">게임 완료!</div>
@@ -156,6 +179,61 @@
 </div>
 
 <script>
+    // 주사위 등급과 대표 색상을 상수로 분리해 신규 등급 추가 시 수정 지점을 최소화합니다.
+    const DICE_TIERS = Object.freeze({
+        TIER_1: Object.freeze({ key: '1', name: '1단계', color: 'white' }),
+        TIER_2: Object.freeze({ key: '2', name: '2단계', color: 'blue' }),
+        TIER_3: Object.freeze({ key: '3', name: '3단계', color: 'red' }),
+        SPECIAL: Object.freeze({ key: 'S', name: '특수', color: 'black' })
+    });
+
+    // 기획 주사위 목록을 한 곳에서 관리해 이후 밸런스/콘텐츠 확장 시 재사용할 수 있도록 구성합니다.
+    const DICE_CATALOG_RAW = Object.freeze({
+        [DICE_TIERS.TIER_1.key]: Object.freeze([
+            Object.freeze(['1G', '1G', '1G', '0G', '0G', '0G']),
+            Object.freeze(['2G', '2G', '2G', '-2G', '-2G', '-2G']),
+            Object.freeze(['0', '0', '0', '+1', '+1', '+1']),
+            Object.freeze(['-1', '-1', '-1', '+1', '+1', '+1']),
+            Object.freeze(['-1', '-1', '-1', '+2', '+2', '+2']),
+            Object.freeze(['-3', '-3', '-3', '+3', '+3', '+3']),
+            Object.freeze(['-3', '-2', '-1', '+1', '+2', '+3'])
+        ]),
+        [DICE_TIERS.TIER_2.key]: Object.freeze([
+            Object.freeze(['-1', '-2', '-3', '+4', '+5', '+6']),
+            Object.freeze(['-2', '-2', '-2', '+2', '+2', '+2']),
+            Object.freeze(['-4', '-4', '-4', '+4', '+4', '+4']),
+            Object.freeze(['-5', '-5', '-5', '+5', '+5', '+5']),
+            Object.freeze(['-4', '-4', '-4', '+4', '+4', '+4']),
+            Object.freeze(['4G', '4G', '4G', '-4G', '-4G', '-4G'])
+        ]),
+        [DICE_TIERS.TIER_3.key]: Object.freeze([
+            Object.freeze(['10', '10', '10', '10', '10', '10']),
+            Object.freeze(['-10', '-10', '-10', '-10', '-10', '-10']),
+            Object.freeze(['6G', '6G', '6G', '-6G', '-6G', '-6G'])
+        ]),
+        [DICE_TIERS.SPECIAL.key]: Object.freeze([
+            Object.freeze(['x1', 'x2', 'x3', 'x4', 'x5', 'x6'])
+        ])
+    });
+
+    // 원본 배열을 정규화해 id/등급/대표색/면 정보를 가진 카탈로그 형태로 변환합니다.
+    function buildDiceCatalog(rawCatalog) {
+        return Object.freeze(Object.entries(rawCatalog).reduce((acc, [tierKey, diceList]) => {
+            const tierMeta = Object.values(DICE_TIERS).find((tier) => tier.key === tierKey);
+            acc[tierKey] = Object.freeze(diceList.map((faces, index) => Object.freeze({
+                id: `${tierKey}-${index + 1}`,
+                tierKey,
+                tierName: tierMeta?.name ?? '미정',
+                tierColor: tierMeta?.color ?? 'gray',
+                faces: Object.freeze([...faces])
+            })));
+            return acc;
+        }, {}));
+    }
+
+    // 앞으로 다른 시스템(획득/해금/드랍 테이블)에서 재사용할 최종 주사위 카탈로그입니다.
+    const DICE_CATALOG = buildDiceCatalog(DICE_CATALOG_RAW);
+
     // 스테이지 목표 점수를 한 곳에서 관리해 밸런스 조정이 쉽도록 분리합니다.
     const STAGE_TARGET_SCORES = Object.freeze([3, 6, 12, 24, 48, 96, 192, 384, 768, 1536]);
 
@@ -172,12 +250,25 @@
         ROLL_ANIMATION_MS: 600,
         SCORE_STEP_DELAY_MS: 300,
         RESULT_CHECK_DELAY_MS: 600,
-        DRAG_DROP_REORDER_DELAY_MS: 120
+        DRAG_DROP_REORDER_DELAY_MS: 120,
+        INITIAL_DRAFT_COUNT: 6,
+        INITIAL_PICK_COUNT: 3,
+        STAGE_REWARD_OPTION_COUNT: 3,
+        STAGE_REWARD_PICK_COUNT: 1
     };
+
+    // 스테이지 진행도에 따라 선택 후보 등급을 확장하기 위한 기준값입니다.
+    const STAGE_TIER_POOL = Object.freeze([
+        Object.freeze({ minStage: 1, tierKey: DICE_TIERS.TIER_1.key }),
+        Object.freeze({ minStage: 4, tierKey: DICE_TIERS.TIER_2.key }),
+        Object.freeze({ minStage: 7, tierKey: DICE_TIERS.TIER_3.key }),
+        Object.freeze({ minStage: 10, tierKey: DICE_TIERS.SPECIAL.key })
+    ]);
 
     let currentStage, stageScore, totalGold, rollsLeftInStage, diceState, isDoubleActive;
     let currentCosts = {};
     let draggingDiceIndex = null;
+    let isDraftingDice = false;
 
     const rollBtn = document.getElementById('roll-btn');
     const scoreEl = document.getElementById('total-score');
@@ -190,6 +281,12 @@
     const calcStatusEl = document.getElementById('calc-status');
     const shopMsg = document.getElementById('shop-msg');
 
+    const draftModal = document.getElementById('dice-draft-modal');
+    const draftTitleEl = document.getElementById('draft-title');
+    const draftDescEl = document.getElementById('draft-desc');
+    const draftGridEl = document.getElementById('draft-grid');
+    const draftConfirmBtn = document.getElementById('draft-confirm-btn');
+
     const resultModal = document.getElementById('result-modal');
     const modalTitle = document.getElementById('modal-title');
     const modalMsg = document.getElementById('modal-msg');
@@ -201,25 +298,162 @@
     const addDiceBtn = document.getElementById('add-dice-btn');
     const doubleBtn = document.getElementById('double-btn');
 
-    function resetGame() {
+
+    // 문자열 면 정보를 기존 전투 로직(value/redFaces)으로 사용할 수 있게 숫자 데이터로 해석합니다.
+    function parseFaceToken(faceToken) {
+        const trimmed = String(faceToken).trim();
+        const multiplierMatch = trimmed.match(/^x(\d+)$/i);
+        if (multiplierMatch) {
+            return { raw: trimmed, value: Number(multiplierMatch[1]), isMultiplier: true, isGold: false };
+        }
+
+        const goldMatch = trimmed.match(/^([+-]?\d+)G$/i);
+        if (goldMatch) {
+            return { raw: trimmed, value: Number(goldMatch[1]), isMultiplier: false, isGold: true };
+        }
+
+        const numeric = Number(trimmed);
+        return {
+            raw: trimmed,
+            value: Number.isFinite(numeric) ? numeric : 0,
+            isMultiplier: false,
+            isGold: false
+        };
+    }
+
+    // 카탈로그 주사위를 현재 런타임 구조로 변환해 기존 게임 로직과 호환되게 유지합니다.
+    function createRuntimeDiceFromCatalog(catalogDice) {
+        const parsedFaces = catalogDice.faces.map(parseFaceToken).filter((face) => !face.isMultiplier);
+        const numericFaces = parsedFaces.length > 0 ? parsedFaces : [{ value: 1 }, { value: 1 }, { value: 1 }, { value: -1 }, { value: -1 }, { value: -1 }];
+        const positiveCount = numericFaces.filter((face) => face.value >= 0).length;
+        const avgValue = Math.max(1, Math.round(numericFaces.reduce((acc, face) => acc + Math.abs(face.value), 0) / numericFaces.length));
+
+        return {
+            ...catalogDice,
+            value: avgValue,
+            redFaces: positiveCount,
+            faces: [...catalogDice.faces]
+        };
+    }
+
+    // 중복 허용 랜덤 추출을 위해 후보에서 랜덤 인덱스를 여러 번 선택합니다.
+    function pickRandomDiceWithReplacement(pool, count) {
+        return Array.from({ length: count }, () => {
+            const index = Math.floor(Math.random() * pool.length);
+            return createRuntimeDiceFromCatalog(pool[index]);
+        });
+    }
+
+    // 스테이지별 허용 주사위 등급 목록을 계산해 보상 드래프트 로직에서 재사용합니다.
+    function getTierKeysByStage(stage) {
+        return STAGE_TIER_POOL.filter((rule) => stage >= rule.minStage).map((rule) => rule.tierKey);
+    }
+
+    // 재사용 가능한 주사위 선택 모달입니다.
+    function openDiceDraftModal({ title, description, options, pickCount }) {
+        return new Promise((resolve) => {
+            const selected = new Set();
+            draftTitleEl.innerText = title;
+            draftDescEl.innerText = description;
+            draftGridEl.innerHTML = '';
+            draftConfirmBtn.disabled = true;
+            draftConfirmBtn.innerText = `${pickCount}개 선택 완료`;
+
+            options.forEach((dice, index) => {
+                const card = document.createElement('div');
+                card.className = 'draft-card';
+                card.dataset.index = String(index);
+
+                const titleEl = document.createElement('div');
+                titleEl.className = 'draft-card-title';
+                titleEl.innerText = `${dice.tierName} / ${dice.id}`;
+
+                const facesEl = document.createElement('div');
+                facesEl.className = 'draft-faces';
+                dice.faces.forEach((faceToken) => {
+                    const tokenInfo = parseFaceToken(faceToken);
+                    const faceEl = document.createElement('span');
+                    faceEl.className = `draft-face ${tokenInfo.value > 0 ? 'pos' : tokenInfo.value < 0 ? 'neg' : 'neu'}`;
+                    faceEl.innerText = tokenInfo.raw;
+                    facesEl.appendChild(faceEl);
+                });
+
+                card.appendChild(titleEl);
+                card.appendChild(facesEl);
+                card.addEventListener('click', () => {
+                    if (selected.has(index)) {
+                        selected.delete(index);
+                    } else if (selected.size < pickCount) {
+                        selected.add(index);
+                    }
+
+                    card.classList.toggle('selected', selected.has(index));
+                    draftConfirmBtn.disabled = selected.size !== pickCount;
+                });
+
+                draftGridEl.appendChild(card);
+            });
+
+            draftConfirmBtn.onclick = () => {
+                const pickedDice = [...selected].map((selectedIndex) => options[selectedIndex]);
+                draftModal.style.display = 'none';
+                isDraftingDice = false;
+                resolve(pickedDice);
+            };
+
+            isDraftingDice = true;
+            draftModal.style.display = 'flex';
+        });
+    }
+
+    async function runInitialDiceDraft() {
+        const tier1Pool = DICE_CATALOG[DICE_TIERS.TIER_1.key];
+        const options = pickRandomDiceWithReplacement(tier1Pool, CONFIG.INITIAL_DRAFT_COUNT);
+        const selected = await openDiceDraftModal({
+            title: '시작 주사위 선택',
+            description: `${CONFIG.INITIAL_DRAFT_COUNT}개 중 ${CONFIG.INITIAL_PICK_COUNT}개를 선택하세요.`,
+            options,
+            pickCount: CONFIG.INITIAL_PICK_COUNT
+        });
+
+        diceState = selected;
+        renderDice();
+        updateUI();
+        rollBtn.disabled = false;
+    }
+
+    async function runStageRewardDraft() {
+        const tierKeys = getTierKeysByStage(currentStage);
+        const pool = tierKeys.flatMap((tierKey) => DICE_CATALOG[tierKey]);
+        const options = pickRandomDiceWithReplacement(pool, CONFIG.STAGE_REWARD_OPTION_COUNT);
+        const selected = await openDiceDraftModal({
+            title: '스테이지 보상 주사위',
+            description: `${CONFIG.STAGE_REWARD_OPTION_COUNT}개 중 1개를 선택해 덱에 추가하세요.`,
+            options,
+            pickCount: CONFIG.STAGE_REWARD_PICK_COUNT
+        });
+
+        diceState.push(selected[0]);
+    }
+
+    async function resetGame() {
         currentStage = 1;
         stageScore = 0;
         totalGold = 0;
         rollsLeftInStage = CONFIG.ROLLS_PER_STAGE;
         isDoubleActive = false;
         currentCosts = { value: CONFIG.INITIAL_VALUE_COST, ratio: CONFIG.INITIAL_RATIO_COST, addDice: CONFIG.INITIAL_ADD_DICE_COST };
-        diceState = [
-            { value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES },
-            { value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES },
-            { value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES }
-        ];
+        diceState = [];
         multiplierUi.style.display = "none";
-        calcStatusEl.innerText = "";
+        calcStatusEl.innerText = "시작 주사위를 선택하세요.";
         resultModal.style.display = "none";
+        draftModal.style.display = "none";
         renderDice();
         updateUI();
         shopMsg.innerText = "";
-        rollBtn.disabled = false;
+        rollBtn.disabled = true;
+        await runInitialDiceDraft();
+        calcStatusEl.innerText = "";
     }
 
     function renderDice() {
@@ -248,7 +482,7 @@
     // 드래그/드롭 이벤트를 모듈화해 렌더링 시마다 같은 규칙을 재사용합니다.
     function bindDiceDragEvents(diceEl) {
         diceEl.addEventListener('dragstart', (event) => {
-            if (rollBtn.disabled) {
+            if (rollBtn.disabled || isDraftingDice) {
                 event.preventDefault();
                 return;
             }
@@ -259,7 +493,7 @@
         });
 
         diceEl.addEventListener('dragover', (event) => {
-            if (draggingDiceIndex === null || rollBtn.disabled) return;
+            if (draggingDiceIndex === null || rollBtn.disabled || isDraftingDice) return;
             event.preventDefault();
             diceEl.classList.add('drag-over');
         });
@@ -281,7 +515,7 @@
 
     // 배열 재정렬을 한 곳에서 처리해 다른 입력 방식(버튼/키보드) 확장 시 재사용 가능하게 만듭니다.
     function reorderDice(fromIndex, toIndex) {
-        if (rollBtn.disabled || fromIndex === null || toIndex === null || fromIndex === toIndex) {
+        if (rollBtn.disabled || isDraftingDice || fromIndex === null || toIndex === null || fromIndex === toIndex) {
             clearDragStyles();
             return;
         }
@@ -434,7 +668,7 @@
     }
 
     rollBtn.addEventListener('click', async () => {
-        if (rollsLeftInStage <= 0) return;
+        if (rollsLeftInStage <= 0 || isDraftingDice) return;
         rollsLeftInStage--;
         rollBtn.disabled = true;
         calcStatusEl.innerText = "주사위를 굴리는 중...";
@@ -452,33 +686,34 @@
         await animateScoreCalculation(rollResults);
         updateUI();
 
-        // 스테이지 클리어 조건 확인
         const targetScore = CONFIG.STAGE_TARGETS[currentStage - 1];
         if (stageScore >= targetScore) {
-            // 스테이지 클리어
-            setTimeout(() => {
-                if (currentStage === CONFIG.TOTAL_STAGES) {
-                    // 모든 스테이지 완료
-                    showFinalResult(false);
-                } else {
-                    advanceToNextStage();
-                    rollBtn.disabled = false;
-                }
+            await wait(CONFIG.RESULT_CHECK_DELAY_MS);
+            if (currentStage === CONFIG.TOTAL_STAGES) {
+                showFinalResult(false);
                 calcStatusEl.innerText = "";
-            }, CONFIG.RESULT_CHECK_DELAY_MS);
-        } else if (rollsLeftInStage <= 0) {
-            // 롤이 남아있지 않고 목표점수 미달 - 게임오버
-            setTimeout(() => {
-                showFinalResult(true);
-                calcStatusEl.innerText = "";
-            }, CONFIG.RESULT_CHECK_DELAY_MS);
-        } else {
-            // 게임 계속
+                return;
+            }
+
+            calcStatusEl.innerText = "스테이지 보상 주사위를 선택하세요.";
+            await runStageRewardDraft();
+            advanceToNextStage();
             rollBtn.disabled = false;
-            setTimeout(() => {
-                if (rollBtn.disabled === false) calcStatusEl.innerText = "";
-            }, CONFIG.RESULT_CHECK_DELAY_MS);
+            calcStatusEl.innerText = "";
+            return;
         }
+
+        if (rollsLeftInStage <= 0) {
+            await wait(CONFIG.RESULT_CHECK_DELAY_MS);
+            showFinalResult(true);
+            calcStatusEl.innerText = "";
+            return;
+        }
+
+        rollBtn.disabled = false;
+        setTimeout(() => {
+            if (rollBtn.disabled === false) calcStatusEl.innerText = "";
+        }, CONFIG.RESULT_CHECK_DELAY_MS);
     });
 
     function upgradeValue() {
@@ -508,8 +743,10 @@
 
     function addDice() {
         if (totalGold >= currentCosts.addDice) {
+            const tierKeys = getTierKeysByStage(currentStage);
+            const pool = tierKeys.flatMap((tierKey) => DICE_CATALOG[tierKey]);
             totalGold -= currentCosts.addDice;
-            diceState.push({ value: CONFIG.INITIAL_DICE_VALUE, redFaces: CONFIG.INITIAL_RED_FACES });
+            diceState.push(pickRandomDiceWithReplacement(pool, 1)[0]);
             currentCosts.addDice += CONFIG.COST_INCREASE;
             renderDice();
             showMsg("주사위 추가 성공!");
