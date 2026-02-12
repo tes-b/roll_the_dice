@@ -154,7 +154,7 @@
         INITIAL_ROLLS_PER_STAGE: 5,
         DRAFT_OPTION_COUNT: 3,
         DRAFT_PICK_COUNT: 1,
-        CLEAR_GOLD_PER_REMAINING_ROLL: 1,
+        CLEAR_GOLD_PER_REMAINING_ROLL: 2,
         ROLL_ANIMATION_MS: 500,
         RESULT_DELAY_MS: 300,
         // 단일 선택 모드에서 다른 카드를 클릭하면 기존 선택을 교체합니다.
@@ -241,6 +241,11 @@
 
     const DICE_CATALOG = buildDiceCatalog(DICE_CATALOG_RAW);
 
+
+    function createInitialShopPriceIncreaseMap() {
+        return Object.fromEntries(Object.keys(CONFIG.SHOP_BASE_PRICES).map((actionKey) => [actionKey, 0]));
+    }
+
     let currentStage = 1;
     let stageScore = 0;
     let totalGold = 0;
@@ -254,7 +259,8 @@
     let draggingDiceIndex = null;
     let isShopPhase = false;
     let selectedShopDiceIndex = null;
-    let shopPriceIncrease = 0;
+    // 상점 행동별 가격 증가량은 개별적으로 누적 관리합니다.
+    let shopActionPriceIncrease = createInitialShopPriceIncreaseMap();
 
     const rollBtn = document.getElementById('roll-btn');
     const submitBtn = document.getElementById('submit-btn');
@@ -410,7 +416,8 @@
 
     // 상점 가격은 행동 1회마다 +1G가 누적되고, 다음 상점에서 초기화됩니다.
     function getShopActionCost(actionKey) {
-        return CONFIG.SHOP_BASE_PRICES[actionKey] + shopPriceIncrease;
+        const increasedCost = shopActionPriceIncrease[actionKey] ?? 0;
+        return CONFIG.SHOP_BASE_PRICES[actionKey] + increasedCost;
     }
 
     function formatScoreToken(scoreValue) {
@@ -655,7 +662,7 @@
     function openShopPanel() {
         isShopPhase = true;
         selectedShopDiceIndex = null;
-        shopPriceIncrease = 0;
+        shopActionPriceIncrease = createInitialShopPriceIncreaseMap();
         stageControls.classList.add('hidden');
         shopPanel.classList.remove('hidden');
         rollBtn.disabled = true;
@@ -726,7 +733,8 @@
             }
             const soldDice = diceState.splice(selectedShopDiceIndex, 1)[0];
             const saleGold = CONFIG.SELL_GOLD_BY_TIER[soldDice.tierKey] ?? CONFIG.SELL_GOLD_BY_TIER['1'];
-            totalGold += saleGold;
+            // 판매 골드는 비용 차감 이후 별도로 합산해 UI에 즉시 반영합니다.
+            totalGold = totalGold + saleGold;
             selectedShopDiceIndex = null;
             calcStatusEl.innerText = `주사위를 판매해 ${saleGold}G를 얻었습니다.`;
         } else if (actionKey === 'DRAW') {
@@ -735,8 +743,8 @@
             calcStatusEl.innerText = `뽑기로 주사위(${pickedDice.tierName} / ${pickedDice.id})를 획득했습니다.`;
         }
 
-        // 행동 수행 성공 시 현재 상점 한정 가격 누적치를 증가시킵니다.
-        shopPriceIncrease += 1;
+        // 행동 수행 성공 시 해당 행동의 상점 가격만 1G 누적 증가시킵니다.
+        shopActionPriceIncrease[actionKey] = (shopActionPriceIncrease[actionKey] ?? 0) + 1;
         renderDice();
         updateUI();
     }
@@ -755,7 +763,7 @@
         lastRollResults = [];
         isShopPhase = false;
         selectedShopDiceIndex = null;
-        shopPriceIncrease = 0;
+        shopActionPriceIncrease = createInitialShopPriceIncreaseMap();
         shopPanel.classList.add('hidden');
         stageControls.classList.remove('hidden');
 
@@ -855,7 +863,7 @@
         isRolling = false;
         isShopPhase = false;
         selectedShopDiceIndex = null;
-        shopPriceIncrease = 0;
+        shopActionPriceIncrease = createInitialShopPriceIncreaseMap();
         diceState = createStarterDice();
 
         resultModal.style.display = 'none';
