@@ -64,9 +64,6 @@
 
         .hidden { display: none; }
         .shop { margin-top: 22px; border-top: 2px solid #eee; padding-top: 16px; text-align: left; }
-        .shop h3 { margin: 0 0 12px; color: #2f3542; }
-        .owned-dice-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-        .owned-item { background: #f1f2f6; border-radius: 8px; padding: 8px; font-size: 0.8rem; color: #2f3542; }
 
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; z-index: 1000; }
         .modal-content { width: min(680px, 92vw); background: white; border-radius: 16px; padding: 22px; }
@@ -110,9 +107,6 @@
     </div>
 
     <div id="shop-panel" class="shop hidden">
-        <h3>상점 (임시)</h3>
-        <div style="font-size:0.9rem; color:#57606f; margin-bottom: 8px;">현재는 보유 주사위만 표시됩니다.</div>
-        <div id="owned-dice-list" class="owned-dice-list"></div>
         <button id="next-stage-btn">Next Stage</button>
     </div>
 </div>
@@ -144,6 +138,8 @@
         CLEAR_GOLD_PER_REMAINING_ROLL: 1,
         ROLL_ANIMATION_MS: 500,
         RESULT_DELAY_MS: 300,
+        // 단일 선택 모드에서 다른 카드를 클릭하면 기존 선택을 교체합니다.
+        DRAFT_REPLACE_SELECTION_WHEN_FULL: true,
         STAGE_TARGETS: Object.freeze([3, 6, 12, 20, 30, 42, 56, 72, 90, 110]),
         TIER_PROBABILITIES: Object.freeze([
             Object.freeze({ tierKey: '1', weight: 80 }),
@@ -231,7 +227,6 @@
     const targetEl = document.getElementById('target-score');
     const rollsLeftEl = document.getElementById('rolls-left');
     const rollsMaxEl = document.getElementById('rolls-max');
-    const ownedDiceListEl = document.getElementById('owned-dice-list');
 
     const draftModal = document.getElementById('dice-draft-modal');
     const draftGridEl = document.getElementById('draft-grid');
@@ -325,7 +320,8 @@
         });
 
         diceEl.addEventListener('dragover', (event) => {
-            if (draggingDiceIndex === null || rollBtn.disabled || isDrafting) return;
+            // 상점 단계에서도 주사위 위치 이동이 가능하도록 롤 버튼 비활성화 상태는 검사하지 않습니다.
+            if (draggingDiceIndex === null || isDrafting) return;
             event.preventDefault();
             diceEl.classList.add('drag-over');
         });
@@ -457,6 +453,8 @@
         // 스테이지 클리어 후 주사위 뽑기를 반드시 수행합니다.
         const pickedDice = await openDiceDraftModal();
         diceState.push(pickedDice);
+        // 뽑기 완료 즉시 주사위 보드에도 반영해 방금 획득한 주사위를 바로 확인할 수 있게 합니다.
+        renderDice();
 
         // 뽑기 이후 상점(임시) 페이지를 열고 Next Stage 버튼을 노출합니다.
         openShopPanel();
@@ -467,20 +465,10 @@
         shopPanel.classList.remove('hidden');
         rollBtn.disabled = true;
         submitBtn.disabled = true;
-        renderOwnedDiceList();
         calcStatusEl.innerText = '상점 단계입니다. Next Stage를 눌러 진행하세요.';
     }
 
-    function renderOwnedDiceList() {
-        ownedDiceListEl.innerHTML = '';
 
-        diceState.forEach((dice, index) => {
-            const item = document.createElement('div');
-            item.className = 'owned-item';
-            item.innerText = `#${index + 1} ${dice.tierName} [${dice.faces.join(', ')}]`;
-            ownedDiceListEl.appendChild(item);
-        });
-    }
 
     function proceedNextStage() {
         currentStage += 1;
@@ -547,6 +535,16 @@
                     if (selected.has(index)) {
                         selected.delete(index);
                         card.classList.remove('selected');
+                    } else if (selected.size >= CONFIG.DRAFT_PICK_COUNT && CONFIG.DRAFT_REPLACE_SELECTION_WHEN_FULL) {
+                        // 선택 가능한 개수가 가득 찬 상태에서 새 카드를 누르면 기존 선택을 교체합니다.
+                        const previousSelected = [...selected];
+                        selected.clear();
+                        previousSelected.forEach((selectedIndex) => {
+                            const oldCard = draftGridEl.children[selectedIndex];
+                            oldCard?.classList.remove('selected');
+                        });
+                        selected.add(index);
+                        card.classList.add('selected');
                     } else if (selected.size < CONFIG.DRAFT_PICK_COUNT) {
                         selected.add(index);
                         card.classList.add('selected');
