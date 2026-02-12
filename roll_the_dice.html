@@ -186,6 +186,11 @@
     });
 
     const TIER_NAMES = Object.freeze({ '1': 'Tier1', '2': 'Tier2', '3': 'Tier3', 'S': 'TierS' });
+    // 눈 문자열 파싱 규칙을 상수화해 향후 표기 확장 시 수정 지점을 단일화합니다.
+    const FACE_TOKEN_RULES = Object.freeze({
+        GOLD_SUFFIX: 'G',
+        MULTIPLIER_PREFIX: 'x'
+    });
 
     function buildDiceCatalog(rawCatalog) {
         return Object.freeze(Object.entries(rawCatalog).reduce((acc, [tierKey, diceList]) => {
@@ -238,10 +243,68 @@
     const resultDescEl = document.getElementById('result-desc');
     const restartBtn = document.getElementById('restart-btn');
 
-    // 문자열 면을 숫자로 해석하는 공통 유틸 함수입니다.
+    // 눈 문자열을 타입별(점수/골드/곱셈)로 해석하는 공통 유틸 함수입니다.
     function parseFaceToken(faceToken) {
-        const numeric = Number(String(faceToken).trim());
-        return Number.isFinite(numeric) ? numeric : 0;
+        const normalized = String(faceToken).trim();
+
+        if (normalized.startsWith(FACE_TOKEN_RULES.MULTIPLIER_PREFIX)) {
+            const multiplier = Number(normalized.slice(FACE_TOKEN_RULES.MULTIPLIER_PREFIX.length));
+            return {
+                type: 'multiplier',
+                value: Number.isFinite(multiplier) ? multiplier : 0
+            };
+        }
+
+        if (normalized.endsWith(FACE_TOKEN_RULES.GOLD_SUFFIX)) {
+            const goldValue = Number(normalized.slice(0, -FACE_TOKEN_RULES.GOLD_SUFFIX.length));
+            return {
+                type: 'gold',
+                value: Number.isFinite(goldValue) ? goldValue : 0
+            };
+        }
+
+        const scoreValue = Number(normalized);
+        return {
+            type: 'score',
+            value: Number.isFinite(scoreValue) ? scoreValue : 0
+        };
+    }
+
+    // 제출 계산 규칙: 점수/골드를 분리하고, xN은 바로 앞 눈의 결과를 배율로 갱신합니다.
+    function calculateRollOutcome(faceTokens) {
+        const contributions = faceTokens.map(() => ({ score: 0, gold: 0 }));
+
+        faceTokens.forEach((faceToken, index) => {
+            const parsed = parseFaceToken(faceToken);
+
+            if (parsed.type === 'score') {
+                contributions[index] = { score: parsed.value, gold: 0 };
+                return;
+            }
+
+            if (parsed.type === 'gold') {
+                contributions[index] = { score: 0, gold: parsed.value };
+                return;
+            }
+
+            if (index === 0) {
+                // 첫 번째 눈이 배율이면 앞눈이 없으므로 0으로 처리합니다.
+                contributions[index] = { score: 0, gold: 0 };
+                return;
+            }
+
+            // 배율의 결과를 현재 눈 위치로 이동시켜 연속 xN 체인이 가능하도록 처리합니다.
+            contributions[index] = {
+                score: contributions[index - 1].score * parsed.value,
+                gold: contributions[index - 1].gold * parsed.value
+            };
+            contributions[index - 1] = { score: 0, gold: 0 };
+        });
+
+        return contributions.reduce((acc, current) => ({
+            score: acc.score + current.score,
+            gold: acc.gold + current.gold
+        }), { score: 0, gold: 0 });
     }
 
     // 시작 주사위를 카탈로그 구조로 변환해 다른 주사위와 동일한 렌더링 경로를 사용합니다.
@@ -297,7 +360,8 @@
         preview.className = 'dice-faces';
 
         dice.faces.forEach((faceToken) => {
-            const faceValue = parseFaceToken(faceToken);
+            const parsed = parseFaceToken(faceToken);
+            const faceValue = parsed.value;
             const faceCell = document.createElement('span');
             faceCell.className = `face-cell ${faceValue >= 0 ? 'red' : 'blue'}`;
             faceCell.innerText = faceToken;
@@ -397,18 +461,19 @@
             const rollValue = dice.faces[Math.floor(Math.random() * dice.faces.length)];
             const el = document.getElementById(`dice-${index}`);
             const resultEl = el.querySelector('.dice-result');
-            const parsedValue = parseFaceToken(rollValue);
+            const parsedToken = parseFaceToken(rollValue);
+            const parsedValue = parsedToken.value;
 
             el.classList.remove('rolling');
             el.classList.remove('red', 'blue');
             el.classList.add(parsedValue >= 0 ? 'red' : 'blue');
             resultEl.innerText = rollValue;
 
-            return parsedValue;
+            return rollValue;
         });
 
-        const turnScore = lastRollResults.reduce((sum, value) => sum + value, 0);
-        calcStatusEl.innerText = `이번 결과 합계: ${turnScore >= 0 ? '+' : ''}${turnScore} (제출 시 누적)`;
+        const previewOutcome = calculateRollOutcome(lastRollResults);
+        calcStatusEl.innerText = `이번 결과 미리보기: 점수 ${previewOutcome.score >= 0 ? '+' : ''}${previewOutcome.score}, 골드 ${previewOutcome.gold >= 0 ? '+' : ''}${previewOutcome.gold}G (제출 시 반영)`;
 
         // 제출 전에도 다음 롤을 진행할 수 있도록 롤 버튼은 즉시 다시 활성화합니다.
         isRolling = false;
@@ -420,8 +485,11 @@
     async function onSubmitRoll() {
         if (lastRollResults.length === 0) return;
 
-        const turnScore = lastRollResults.reduce((sum, value) => sum + value, 0);
+        const turnOutcome = calculateRollOutcome(lastRollResults);
+        const turnScore = turnOutcome.score;
+        const turnGold = turnOutcome.gold;
         stageScore += turnScore;
+        totalGold += turnGold;
         lastRollResults = [];
         submitBtn.disabled = true;
 
@@ -440,7 +508,7 @@
             return;
         }
 
-        calcStatusEl.innerText = '제출 완료! 다음 롤을 진행하세요.';
+        calcStatusEl.innerText = `제출 완료! 점수 ${turnScore >= 0 ? '+' : ''}${turnScore}, 골드 ${turnGold >= 0 ? '+' : ''}${turnGold}G 획득. 다음 롤을 진행하세요.`;
         rollBtn.disabled = rollsLeftInStage <= 0;
     }
 
@@ -522,7 +590,8 @@
                 faces.className = 'draft-faces';
                 dice.faces.forEach((faceToken) => {
                     const face = document.createElement('span');
-                    const faceValue = parseFaceToken(faceToken);
+                    const parsed = parseFaceToken(faceToken);
+                    const faceValue = parsed.value;
                     face.className = `draft-face ${faceValue > 0 ? 'pos' : faceValue < 0 ? 'neg' : 'neu'}`;
                     face.innerText = faceToken;
                     faces.appendChild(face);
