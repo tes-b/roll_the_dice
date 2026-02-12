@@ -642,7 +642,13 @@
         updateUI();
         calcStatusEl.innerText = `스테이지 클리어! 남은 롤 보너스 +${earnedGold}G`;
 
-        // 스테이지 클리어 후 상점으로 진입합니다.
+        // 스테이지 클리어 직후에는 기존 규칙대로 즉시 뽑기를 먼저 진행합니다.
+        const pickedDice = await openDiceDraftModal();
+        diceState.push(pickedDice);
+        // 뽑기 직후 결과를 확인할 수 있도록 보드에 먼저 반영합니다.
+        renderDice();
+
+        // 즉시 뽑기 완료 후 상점으로 전환합니다.
         openShopPanel();
     }
 
