@@ -64,6 +64,13 @@
 
         .hidden { display: none; }
         .shop { margin-top: 22px; border-top: 2px solid #eee; padding-top: 16px; text-align: left; }
+        .shop-title { font-size: 1rem; font-weight: 800; margin-bottom: 8px; color: #2f3542; }
+        .shop-meta { font-size: 0.85rem; color: #57606f; margin-bottom: 10px; }
+        .shop-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+        .shop-actions button { font-size: 0.85rem; padding: 10px 8px; }
+        .shop-actions button small { display: block; font-size: 0.72rem; margin-top: 3px; opacity: 0.9; }
+        .shop-next-btn-wrap { margin-top: 10px; }
+        .dice.shop-selected { outline: 4px solid #1e90ff; outline-offset: 3px; }
 
         .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); align-items: center; justify-content: center; z-index: 1000; }
         .modal-content { width: min(680px, 92vw); background: white; border-radius: 16px; padding: 22px; }
@@ -107,7 +114,19 @@
     </div>
 
     <div id="shop-panel" class="shop hidden">
-        <button id="next-stage-btn">Next Stage</button>
+        <div class="shop-title">상점</div>
+        <div id="shop-meta" class="shop-meta">주사위를 선택하고 행동을 고르세요.</div>
+        <div class="shop-actions">
+            <button id="shop-abs-up-btn">절대값 +1<small id="shop-abs-up-price">0G</small></button>
+            <button id="shop-face-up-btn">눈금 +1<small id="shop-face-up-price">0G</small></button>
+            <button id="shop-face-down-btn">눈금 -1<small id="shop-face-down-price">0G</small></button>
+            <button id="shop-invert-btn">부호 반전<small id="shop-invert-price">0G</small></button>
+            <button id="shop-sell-btn">판매<small id="shop-sell-price">0G</small></button>
+            <button id="shop-draw-btn">뽑기<small id="shop-draw-price">0G</small></button>
+        </div>
+        <div class="shop-next-btn-wrap">
+            <button id="next-stage-btn">Next Stage</button>
+        </div>
     </div>
 </div>
 
@@ -146,7 +165,23 @@
             Object.freeze({ tierKey: '2', weight: 15 }),
             Object.freeze({ tierKey: '3', weight: 4 }),
             Object.freeze({ tierKey: 'S', weight: 1 })
-        ])
+        ]),
+        // 상점 기본 가격은 밸런스 조정을 쉽게 하기 위해 상수로 분리합니다.
+        SHOP_BASE_PRICES: Object.freeze({
+            ABS_UP: 2,
+            FACE_UP: 2,
+            FACE_DOWN: 2,
+            SIGN_INVERT: 2,
+            SELL: 1,
+            DRAW: 5
+        }),
+        // 판매 골드 규칙(1/3/9/27)을 등급별 상수로 고정합니다.
+        SELL_GOLD_BY_TIER: Object.freeze({
+            '1': 1,
+            '2': 3,
+            '3': 9,
+            'S': 27
+        })
     });
 
     // 요구사항의 기본 시작 주사위를 상수 배열로 고정합니다.
@@ -217,6 +252,9 @@
     let isDrafting = false;
     let isRolling = false;
     let draggingDiceIndex = null;
+    let isShopPhase = false;
+    let selectedShopDiceIndex = null;
+    let shopPriceIncrease = 0;
 
     const rollBtn = document.getElementById('roll-btn');
     const submitBtn = document.getElementById('submit-btn');
@@ -232,6 +270,20 @@
     const targetEl = document.getElementById('target-score');
     const rollsLeftEl = document.getElementById('rolls-left');
     const rollsMaxEl = document.getElementById('rolls-max');
+    const shopMetaEl = document.getElementById('shop-meta');
+    const shopAbsUpBtn = document.getElementById('shop-abs-up-btn');
+    const shopFaceUpBtn = document.getElementById('shop-face-up-btn');
+    const shopFaceDownBtn = document.getElementById('shop-face-down-btn');
+    const shopInvertBtn = document.getElementById('shop-invert-btn');
+    const shopSellBtn = document.getElementById('shop-sell-btn');
+    const shopDrawBtn = document.getElementById('shop-draw-btn');
+
+    const shopAbsUpPriceEl = document.getElementById('shop-abs-up-price');
+    const shopFaceUpPriceEl = document.getElementById('shop-face-up-price');
+    const shopFaceDownPriceEl = document.getElementById('shop-face-down-price');
+    const shopInvertPriceEl = document.getElementById('shop-invert-price');
+    const shopSellPriceEl = document.getElementById('shop-sell-price');
+    const shopDrawPriceEl = document.getElementById('shop-draw-price');
 
     const draftModal = document.getElementById('dice-draft-modal');
     const draftGridEl = document.getElementById('draft-grid');
@@ -353,6 +405,64 @@
         targetEl.innerText = CONFIG.STAGE_TARGETS[currentStage - 1];
         rollsLeftEl.innerText = rollsLeftInStage;
         rollsMaxEl.innerText = rollsPerStage;
+        updateShopButtons();
+    }
+
+    // 상점 가격은 행동 1회마다 +1G가 누적되고, 다음 상점에서 초기화됩니다.
+    function getShopActionCost(actionKey) {
+        return CONFIG.SHOP_BASE_PRICES[actionKey] + shopPriceIncrease;
+    }
+
+    function formatScoreToken(scoreValue) {
+        if (scoreValue > 0) return `+${scoreValue}`;
+        return String(scoreValue);
+    }
+
+    // 점수/골드 눈금만 상점 변형 대상으로 처리하고, xN 배율 눈금은 그대로 둡니다.
+    function transformFaceToken(faceToken, transformer) {
+        const parsed = parseFaceToken(faceToken);
+        if (parsed.type === 'multiplier') return faceToken;
+
+        const transformedValue = transformer(parsed.value);
+        if (parsed.type === 'gold') {
+            return `${transformedValue}G`;
+        }
+        return formatScoreToken(transformedValue);
+    }
+
+    function pickRandomMutableFaceIndex(dice) {
+        const mutableIndexes = dice.faces
+            .map((faceToken, index) => ({ faceToken, index }))
+            .filter(({ faceToken }) => parseFaceToken(faceToken).type !== 'multiplier')
+            .map(({ index }) => index);
+
+        if (mutableIndexes.length === 0) return null;
+        return mutableIndexes[Math.floor(Math.random() * mutableIndexes.length)];
+    }
+
+    function updateShopButtons() {
+        const absCost = getShopActionCost('ABS_UP');
+        const faceUpCost = getShopActionCost('FACE_UP');
+        const faceDownCost = getShopActionCost('FACE_DOWN');
+        const invertCost = getShopActionCost('SIGN_INVERT');
+        const sellCost = getShopActionCost('SELL');
+        const drawCost = getShopActionCost('DRAW');
+        const hasSelection = selectedShopDiceIndex !== null;
+        const canSell = hasSelection && diceState.length > 1;
+
+        shopAbsUpPriceEl.innerText = `${absCost}G`;
+        shopFaceUpPriceEl.innerText = `${faceUpCost}G`;
+        shopFaceDownPriceEl.innerText = `${faceDownCost}G`;
+        shopInvertPriceEl.innerText = `${invertCost}G`;
+        shopSellPriceEl.innerText = `${sellCost}G`;
+        shopDrawPriceEl.innerText = `${drawCost}G`;
+
+        shopAbsUpBtn.disabled = !isShopPhase || !hasSelection || totalGold < absCost;
+        shopFaceUpBtn.disabled = !isShopPhase || !hasSelection || totalGold < faceUpCost;
+        shopFaceDownBtn.disabled = !isShopPhase || !hasSelection || totalGold < faceDownCost;
+        shopInvertBtn.disabled = !isShopPhase || !hasSelection || totalGold < invertCost;
+        shopSellBtn.disabled = !isShopPhase || !canSell || totalGold < sellCost;
+        shopDrawBtn.disabled = !isShopPhase || totalGold < drawCost;
     }
 
     function buildDiceFacesPreview(dice) {
@@ -440,6 +550,20 @@
 
             div.appendChild(result);
             div.appendChild(buildDiceFacesPreview(dice));
+
+            // 상점 단계에서는 클릭으로 대상 주사위를 선택합니다.
+            div.addEventListener('click', () => {
+                if (!isShopPhase || isRolling || isDrafting) return;
+                selectedShopDiceIndex = index;
+                renderDice();
+                shopMetaEl.innerText = `${index + 1}번 주사위를 선택했습니다. 원하는 행동을 고르세요.`;
+                updateShopButtons();
+            });
+
+            if (isShopPhase && selectedShopDiceIndex === index) {
+                div.classList.add('shop-selected');
+            }
+
             bindDiceDragEvents(div);
             diceContainer.appendChild(div);
         });
@@ -518,22 +642,97 @@
         updateUI();
         calcStatusEl.innerText = `스테이지 클리어! 남은 롤 보너스 +${earnedGold}G`;
 
-        // 스테이지 클리어 후 주사위 뽑기를 반드시 수행합니다.
-        const pickedDice = await openDiceDraftModal();
-        diceState.push(pickedDice);
-        // 뽑기 완료 즉시 주사위 보드에도 반영해 방금 획득한 주사위를 바로 확인할 수 있게 합니다.
-        renderDice();
-
-        // 뽑기 이후 상점(임시) 페이지를 열고 Next Stage 버튼을 노출합니다.
+        // 스테이지 클리어 후 상점으로 진입합니다.
         openShopPanel();
     }
 
     function openShopPanel() {
+        isShopPhase = true;
+        selectedShopDiceIndex = null;
+        shopPriceIncrease = 0;
         stageControls.classList.add('hidden');
         shopPanel.classList.remove('hidden');
         rollBtn.disabled = true;
         submitBtn.disabled = true;
-        calcStatusEl.innerText = '상점 단계입니다. Next Stage를 눌러 진행하세요.';
+        calcStatusEl.innerText = '상점 단계입니다. 주사위를 선택해 강화/판매/뽑기를 진행하세요.';
+        shopMetaEl.innerText = '주사위를 선택하고 행동을 고르세요. 행동 1회마다 상점 가격이 +1G 증가합니다.';
+        renderDice();
+        updateShopButtons();
+    }
+
+    async function executeShopAction(actionKey) {
+        if (!isShopPhase || isDrafting || isRolling) return;
+
+        const actionCost = getShopActionCost(actionKey);
+        if (totalGold < actionCost) {
+            calcStatusEl.innerText = `골드가 부족합니다. (${actionCost}G 필요)`;
+            return;
+        }
+
+        const selectedDice = selectedShopDiceIndex !== null ? diceState[selectedShopDiceIndex] : null;
+        const requiresSelectedDice = actionKey !== 'DRAW';
+        if (requiresSelectedDice && !selectedDice) {
+            calcStatusEl.innerText = '먼저 대상 주사위를 선택하세요.';
+            return;
+        }
+
+        totalGold -= actionCost;
+
+        if (actionKey === 'ABS_UP') {
+            // 0은 유지하고 절대값만 +1 하는 규칙을 적용합니다.
+            selectedDice.faces = selectedDice.faces.map((faceToken) => transformFaceToken(faceToken, (value) => {
+                if (value === 0) return 0;
+                return Math.sign(value) * (Math.abs(value) + 1);
+            }));
+            calcStatusEl.innerText = `${selectedShopDiceIndex + 1}번 주사위의 모든 눈금 절대값이 +1 되었습니다.`;
+        } else if (actionKey === 'FACE_UP') {
+            const faceIndex = pickRandomMutableFaceIndex(selectedDice);
+            if (faceIndex === null) {
+                calcStatusEl.innerText = '변경 가능한 눈금이 없습니다.';
+                totalGold += actionCost;
+                return;
+            }
+            selectedDice.faces[faceIndex] = transformFaceToken(selectedDice.faces[faceIndex], (value) => value + 1);
+            calcStatusEl.innerText = `${selectedShopDiceIndex + 1}번 주사위의 무작위 눈금이 +1 되었습니다.`;
+        } else if (actionKey === 'FACE_DOWN') {
+            const faceIndex = pickRandomMutableFaceIndex(selectedDice);
+            if (faceIndex === null) {
+                calcStatusEl.innerText = '변경 가능한 눈금이 없습니다.';
+                totalGold += actionCost;
+                return;
+            }
+            selectedDice.faces[faceIndex] = transformFaceToken(selectedDice.faces[faceIndex], (value) => value - 1);
+            calcStatusEl.innerText = `${selectedShopDiceIndex + 1}번 주사위의 무작위 눈금이 -1 되었습니다.`;
+        } else if (actionKey === 'SIGN_INVERT') {
+            const faceIndex = pickRandomMutableFaceIndex(selectedDice);
+            if (faceIndex === null) {
+                calcStatusEl.innerText = '변경 가능한 눈금이 없습니다.';
+                totalGold += actionCost;
+                return;
+            }
+            selectedDice.faces[faceIndex] = transformFaceToken(selectedDice.faces[faceIndex], (value) => value * -1);
+            calcStatusEl.innerText = `${selectedShopDiceIndex + 1}번 주사위의 무작위 눈금 부호가 반전되었습니다.`;
+        } else if (actionKey === 'SELL') {
+            if (diceState.length <= 1) {
+                calcStatusEl.innerText = '마지막 1개 주사위는 판매할 수 없습니다.';
+                totalGold += actionCost;
+                return;
+            }
+            const soldDice = diceState.splice(selectedShopDiceIndex, 1)[0];
+            const saleGold = CONFIG.SELL_GOLD_BY_TIER[soldDice.tierKey] ?? CONFIG.SELL_GOLD_BY_TIER['1'];
+            totalGold += saleGold;
+            selectedShopDiceIndex = null;
+            calcStatusEl.innerText = `주사위를 판매해 ${saleGold}G를 얻었습니다.`;
+        } else if (actionKey === 'DRAW') {
+            const pickedDice = await openDiceDraftModal();
+            diceState.push(pickedDice);
+            calcStatusEl.innerText = `뽑기로 주사위(${pickedDice.tierName} / ${pickedDice.id})를 획득했습니다.`;
+        }
+
+        // 행동 수행 성공 시 현재 상점 한정 가격 누적치를 증가시킵니다.
+        shopPriceIncrease += 1;
+        renderDice();
+        updateUI();
     }
 
 
@@ -548,6 +747,9 @@
         stageScore = 0;
         rollsLeftInStage = rollsPerStage;
         lastRollResults = [];
+        isShopPhase = false;
+        selectedShopDiceIndex = null;
+        shopPriceIncrease = 0;
         shopPanel.classList.add('hidden');
         stageControls.classList.remove('hidden');
 
@@ -645,6 +847,9 @@
         lastRollResults = [];
         isDrafting = false;
         isRolling = false;
+        isShopPhase = false;
+        selectedShopDiceIndex = null;
+        shopPriceIncrease = 0;
         diceState = createStarterDice();
 
         resultModal.style.display = 'none';
@@ -662,6 +867,12 @@
     rollBtn.addEventListener('click', onRollDice);
     submitBtn.addEventListener('click', onSubmitRoll);
     nextStageBtn.addEventListener('click', proceedNextStage);
+    shopAbsUpBtn.addEventListener('click', () => executeShopAction('ABS_UP'));
+    shopFaceUpBtn.addEventListener('click', () => executeShopAction('FACE_UP'));
+    shopFaceDownBtn.addEventListener('click', () => executeShopAction('FACE_DOWN'));
+    shopInvertBtn.addEventListener('click', () => executeShopAction('SIGN_INVERT'));
+    shopSellBtn.addEventListener('click', () => executeShopAction('SELL'));
+    shopDrawBtn.addEventListener('click', () => executeShopAction('DRAW'));
     restartBtn.addEventListener('click', resetGame);
 
     resetGame();
