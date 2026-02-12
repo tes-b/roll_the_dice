@@ -144,6 +144,8 @@
         CLEAR_GOLD_PER_REMAINING_ROLL: 1,
         ROLL_ANIMATION_MS: 500,
         RESULT_DELAY_MS: 300,
+        // 단일 선택 모드에서 다른 카드를 클릭하면 기존 선택을 교체합니다.
+        DRAFT_REPLACE_SELECTION_WHEN_FULL: true,
         STAGE_TARGETS: Object.freeze([3, 6, 12, 20, 30, 42, 56, 72, 90, 110]),
         TIER_PROBABILITIES: Object.freeze([
             Object.freeze({ tierKey: '1', weight: 80 }),
@@ -457,6 +459,8 @@
         // 스테이지 클리어 후 주사위 뽑기를 반드시 수행합니다.
         const pickedDice = await openDiceDraftModal();
         diceState.push(pickedDice);
+        // 뽑기 완료 즉시 주사위 보드에도 반영해 방금 획득한 주사위를 바로 확인할 수 있게 합니다.
+        renderDice();
 
         // 뽑기 이후 상점(임시) 페이지를 열고 Next Stage 버튼을 노출합니다.
         openShopPanel();
@@ -547,6 +551,16 @@
                     if (selected.has(index)) {
                         selected.delete(index);
                         card.classList.remove('selected');
+                    } else if (selected.size >= CONFIG.DRAFT_PICK_COUNT && CONFIG.DRAFT_REPLACE_SELECTION_WHEN_FULL) {
+                        // 선택 가능한 개수가 가득 찬 상태에서 새 카드를 누르면 기존 선택을 교체합니다.
+                        const previousSelected = [...selected];
+                        selected.clear();
+                        previousSelected.forEach((selectedIndex) => {
+                            const oldCard = draftGridEl.children[selectedIndex];
+                            oldCard?.classList.remove('selected');
+                        });
+                        selected.add(index);
+                        card.classList.add('selected');
                     } else if (selected.size < CONFIG.DRAFT_PICK_COUNT) {
                         selected.add(index);
                         card.classList.add('selected');
