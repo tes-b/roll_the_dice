@@ -8,20 +8,37 @@
         body { font-family: 'Pretendard', sans-serif; background-color: #f5f6fa; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
         .game-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); width: 560px; text-align: center; position: relative; }
         h1 { color: #2f3542; margin-top: 0; margin-bottom: 20px; font-size: 2.2rem; letter-spacing: -1px; font-weight: 800; }
+        :root {
+            --tier-1-color: #2ed573;
+            --tier-2-color: #1e90ff;
+            --tier-3-color: #a55eea;
+            --tier-s-color: #f1c40f;
+        }
         .header { display: flex; justify-content: space-between; margin-bottom: 20px; font-weight: bold; font-size: 1.05rem; gap: 10px; }
 
         .panel { margin-bottom: 15px; padding: 15px; background-color: #f0f0f0; border-radius: 10px; }
-        .score-board { font-size: 3rem; font-weight: bold; margin-bottom: 5px; color: #2f3542; }
-        .calc-status { min-height: 24px; margin-bottom: 12px; color: #57606f; font-size: 0.95rem; font-weight: 600; }
+        .score-progress { margin-bottom: 12px; padding: 16px; background-color: #f0f0f0; border-radius: 12px; }
+        .score-progress-labels { display: flex; justify-content: space-between; font-size: 0.78rem; color: #57606f; font-weight: 700; margin-bottom: 6px; }
+        .score-progress-value { font-size: 2.2rem; font-weight: 800; color: #2f3542; letter-spacing: -0.5px; }
+        .score-progress-value .slash { margin: 0 8px; color: #a4b0be; }
+        .round-summary { margin-bottom: 10px; }
+        .round-score { font-size: 2.4rem; font-weight: 800; color: #2f3542; line-height: 1.15; }
+        .round-gold { margin-top: 4px; font-size: 1.2rem; font-weight: 700; color: #ffa502; }
+        .calc-status { min-height: 24px; margin-top: 18px; color: #57606f; font-size: 0.95rem; font-weight: 600; }
 
-        .dice-container { display: flex; justify-content: center; gap: 10px; margin: 24px 0; flex-wrap: wrap; min-height: 90px; }
+        .dice-container { display: flex; justify-content: center; gap: 10px; margin: 14px 0 24px; flex-wrap: wrap; min-height: 90px; }
         .dice { width: 70px; height: 70px; border-radius: 12px; display: flex; justify-content: center; align-items: center; font-size: 1.4rem; font-weight: bold; color: white; transition: 0.2s; border: 4px solid #ddd; position: relative; overflow: visible; }
         .dice-result { pointer-events: none; }
-        .dice.red { background-color: #ff4757; border-color: #ff6b81; box-shadow: 0 4px 0 #ee3545; }
-        .dice.blue { background-color: #2f3542; border-color: #57606f; box-shadow: 0 4px 0 #1e242e; }
+        .dice.red { background-color: #ff4757; border-color: var(--tier-border-color, #ff6b81); box-shadow: 0 4px 0 #ee3545; }
+        .dice.blue { background-color: #2f3542; border-color: var(--tier-border-color, #57606f); box-shadow: 0 4px 0 #1e242e; }
         .dice.rolling { animation: shake 0.2s infinite; }
         .dice.drag-source { opacity: 0.5; }
         .dice.drag-over { outline: 3px dashed #70a1ff; outline-offset: 4px; }
+        /* 티어 색상은 외곽선이 아닌 주사위 기본 테두리 색에 반영합니다. */
+        .dice.tier-1 { --tier-border-color: var(--tier-1-color); }
+        .dice.tier-2 { --tier-border-color: var(--tier-2-color); }
+        .dice.tier-3 { --tier-border-color: var(--tier-3-color); }
+        .dice.tier-S { --tier-border-color: var(--tier-s-color); }
 
         .dice-faces {
             position: absolute;
@@ -97,14 +114,21 @@
         <div style="color: #ffa502;">보유 골드: <span id="gold">0</span>G</div>
     </div>
 
-    <div class="panel">
-        <div style="color: #666; font-size: 0.9rem; margin-bottom: 8px;">목표 점수</div>
-        <div style="font-size: 1.2rem; color: #ff4757; font-weight: bold;"><span id="target-score">3</span> 점 이상</div>
+    <div class="score-progress">
+        <div class="score-progress-labels">
+            <span>Stage Score (제출된 점수)</span>
+            <span>Target Score (목표점수)</span>
+        </div>
+        <div class="score-progress-value">
+            <span id="total-score">0</span><span class="slash">/</span><span id="target-score">3</span>
+        </div>
     </div>
 
-    <div class="score-board" id="total-score">0</div>
-    <div id="calc-status" class="calc-status"></div>
-    <div style="margin-bottom: 20px; color: #666;">현재 스테이지 누적 점수 (남은 롤: <span id="rolls-left">5</span>/<span id="rolls-max">5</span>)</div>
+    <div style="margin-bottom: 12px; color: #666;">남은 롤: <span id="rolls-left">5</span>/<span id="rolls-max">5</span></div>
+    <div class="round-summary">
+        <div class="round-score" id="round-score">0</div>
+        <div class="round-gold" id="round-gold">0G</div>
+    </div>
 
     <div id="dice-container" class="dice-container"></div>
 
@@ -128,6 +152,8 @@
             <button id="next-stage-btn">Next Stage</button>
         </div>
     </div>
+
+    <div id="calc-status" class="calc-status"></div>
 </div>
 
 <div id="dice-draft-modal" class="modal-overlay">
@@ -154,6 +180,7 @@
         INITIAL_ROLLS_PER_STAGE: 5,
         DRAFT_OPTION_COUNT: 3,
         DRAFT_PICK_COUNT: 1,
+        CLEAR_BASE_GOLD: 10,
         CLEAR_GOLD_PER_REMAINING_ROLL: 2,
         ROLL_ANIMATION_MS: 500,
         RESULT_DELAY_MS: 300,
@@ -221,6 +248,11 @@
     });
 
     const TIER_NAMES = Object.freeze({ '1': 'Tier1', '2': 'Tier2', '3': 'Tier3', 'S': 'TierS' });
+    // 라운드 요약 표기의 기본값을 상수로 분리해 유지보수를 쉽게 합니다.
+    const ROUND_SUMMARY_DEFAULT = Object.freeze({
+        SCORE: '0',
+        GOLD: '0G'
+    });
     // 눈 문자열 파싱 규칙을 상수화해 향후 표기 확장 시 수정 지점을 단일화합니다.
     const FACE_TOKEN_RULES = Object.freeze({
         GOLD_SUFFIX: 'G',
@@ -271,6 +303,8 @@
     const calcStatusEl = document.getElementById('calc-status');
     const scoreEl = document.getElementById('total-score');
     const goldEl = document.getElementById('gold');
+    const roundScoreEl = document.getElementById('round-score');
+    const roundGoldEl = document.getElementById('round-gold');
     const stageEl = document.getElementById('stage-num');
     const stageMaxEl = document.getElementById('stage-max');
     const targetEl = document.getElementById('target-score');
@@ -408,7 +442,9 @@
         stageMaxEl.innerText = CONFIG.TOTAL_STAGES;
         scoreEl.innerText = stageScore;
         goldEl.innerText = totalGold;
-        targetEl.innerText = CONFIG.STAGE_TARGETS[currentStage - 1];
+        // 상점 단계에서는 다음 스테이지 목표 점수를 보여줘 다음 난이도를 미리 확인할 수 있게 합니다.
+        const targetStageIndex = isShopPhase && currentStage < CONFIG.TOTAL_STAGES ? currentStage : currentStage - 1;
+        targetEl.innerText = CONFIG.STAGE_TARGETS[targetStageIndex];
         rollsLeftEl.innerText = rollsLeftInStage;
         rollsMaxEl.innerText = rollsPerStage;
         updateShopButtons();
@@ -437,6 +473,22 @@
         return formatScoreToken(transformedValue);
     }
 
+
+    // 라운드 점수/골드 UI에 표시할 부호 포함 문자열을 생성합니다.
+    function formatSignedValue(value, suffix = '') {
+        return `${value >= 0 ? '+' : ''}${value}${suffix}`;
+    }
+
+    // 라운드 표시 영역은 값만 보이도록 양수 부호(+)를 생략합니다.
+    function updateRoundSummary(scoreValue, goldValue) {
+        roundScoreEl.innerText = String(scoreValue);
+        roundGoldEl.innerText = `${goldValue}G`;
+    }
+
+    function resetRoundSummary() {
+        roundScoreEl.innerText = ROUND_SUMMARY_DEFAULT.SCORE;
+        roundGoldEl.innerText = ROUND_SUMMARY_DEFAULT.GOLD;
+    }
     function pickRandomMutableFaceIndex(dice) {
         const mutableIndexes = dice.faces
             .map((faceToken, index) => ({ faceToken, index }))
@@ -548,7 +600,8 @@
         diceState.forEach((dice, index) => {
             const div = document.createElement('div');
             div.id = `dice-${index}`;
-            div.className = 'dice blue';
+            // 티어별 식별이 쉽도록 주사위 테두리 색상 클래스를 함께 적용합니다.
+            div.className = `dice blue tier-${dice.tierKey}`;
             div.draggable = true;
             div.dataset.index = String(index);
 
@@ -605,7 +658,8 @@
         });
 
         const previewOutcome = calculateRollOutcome(lastRollResults);
-        calcStatusEl.innerText = `이번 결과 미리보기: 점수 ${previewOutcome.score >= 0 ? '+' : ''}${previewOutcome.score}, 골드 ${previewOutcome.gold >= 0 ? '+' : ''}${previewOutcome.gold}G (제출 시 반영)`;
+        updateRoundSummary(previewOutcome.score, previewOutcome.gold);
+        calcStatusEl.innerText = `이번 결과 미리보기: 점수 ${formatSignedValue(previewOutcome.score)}, 골드 ${formatSignedValue(previewOutcome.gold, 'G')} (제출 시 반영)`;
 
         // 제출 전에도 다음 롤을 진행할 수 있도록 롤 버튼은 즉시 다시 활성화합니다.
         isRolling = false;
@@ -624,6 +678,7 @@
         totalGold += turnGold;
         lastRollResults = [];
         submitBtn.disabled = true;
+        resetRoundSummary();
 
         updateUI();
 
@@ -645,10 +700,11 @@
     }
 
     async function handleStageClear() {
-        const earnedGold = rollsLeftInStage * CONFIG.CLEAR_GOLD_PER_REMAINING_ROLL;
+        // 스테이지 클리어 보상은 기본 10G + 남은 롤 보너스(롤당 2G)로 계산합니다.
+        const earnedGold = CONFIG.CLEAR_BASE_GOLD + (rollsLeftInStage * CONFIG.CLEAR_GOLD_PER_REMAINING_ROLL);
         totalGold += earnedGold;
         updateUI();
-        calcStatusEl.innerText = `스테이지 클리어! 남은 롤 보너스 +${earnedGold}G`;
+        calcStatusEl.innerText = `스테이지 클리어! 기본 +${CONFIG.CLEAR_BASE_GOLD}G, 남은 롤 보너스 포함 총 +${earnedGold}G`;
 
         // 스테이지 클리어 직후에는 기존 규칙대로 즉시 뽑기를 먼저 진행합니다.
         const pickedDice = await openDiceDraftModal();
@@ -668,6 +724,8 @@
         shopPanel.classList.remove('hidden');
         rollBtn.disabled = true;
         submitBtn.disabled = true;
+        resetRoundSummary();
+        updateUI();
         calcStatusEl.innerText = '상점 단계입니다. 주사위를 선택해 강화/판매/뽑기를 진행하세요.';
         shopMetaEl.innerText = '주사위를 선택하고 행동을 고르세요. 행동 1회마다 상점 가격이 +1G 증가합니다.';
         renderDice();
@@ -772,6 +830,7 @@
 
         renderDice();
         updateUI();
+        resetRoundSummary();
         rollBtn.disabled = false;
         submitBtn.disabled = true;
         calcStatusEl.innerText = `스테이지 ${currentStage} 시작!`;
@@ -876,6 +935,7 @@
 
         renderDice();
         updateUI();
+        resetRoundSummary();
         rollBtn.disabled = false;
         submitBtn.disabled = true;
         calcStatusEl.innerText = '스테이지 1 시작! 주사위를 굴리고 결과를 제출하세요.';
