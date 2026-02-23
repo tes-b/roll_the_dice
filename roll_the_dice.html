@@ -28,9 +28,11 @@
 
         .dice-board { margin: 14px 0 24px; }
         .dice-board-grid {
+            --board-header-height: 34px;
+            --board-row-height: 98px;
             display: grid;
             grid-template-columns: 36px repeat(5, minmax(0, 1fr));
-            grid-template-rows: 34px repeat(2, 98px);
+            grid-template-rows: var(--board-header-height) repeat(2, var(--board-row-height));
             border: 2px solid #a4b0be;
             border-radius: 10px;
             overflow: hidden;
@@ -52,6 +54,13 @@
             font-size: 0.95rem;
             color: #2f3542;
             background: #eceff4;
+        }
+        .board-cell.header,
+        .board-cell.header-empty {
+            height: var(--board-header-height);
+            min-height: var(--board-header-height);
+            padding-top: 0;
+            padding-bottom: 0;
         }
         .board-cell.header-empty { background: #eceff4; }
         .board-cell.data { background: #f9fafc; }
