@@ -195,7 +195,7 @@
         ]),
         // 상점 기본 가격은 밸런스 조정을 쉽게 하기 위해 상수로 분리합니다.
         SHOP_BASE_PRICES: Object.freeze({
-            ABS_UP: 2,
+            ABS_UP: 7,
             FACE_UP: 2,
             FACE_DOWN: 2,
             SIGN_INVERT: 2,
@@ -214,8 +214,8 @@
     // 요구사항의 기본 시작 주사위를 상수 배열로 고정합니다.
     const BASE_STARTER_DICE = Object.freeze([
         Object.freeze(['0', '0', '0', '+1', '+1', '+1']),
-        Object.freeze(['-1', '-1', '-1', '+1', '+1', '+1']),
-        Object.freeze(['-3', '-2', '-1', '+1', '+2', '+3'])
+        Object.freeze(['0', '0', '+1', '+1', '+1G', '+1G']),
+        Object.freeze(['-1', '-1', '0', '0', '+1', '+1'])
     ]);
 
     // 기존 소스코드의 전체 주사위 카탈로그를 유지해 밸런스/콘텐츠 자산이 보존되도록 합니다.
