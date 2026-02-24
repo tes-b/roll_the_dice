@@ -71,6 +71,10 @@
         .dice.red { background-color: #ff4757; border-color: var(--tier-border-color, #ff6b81); box-shadow: 0 4px 0 #ee3545; }
         .dice.blue { background-color: #2f3542; border-color: var(--tier-border-color, #57606f); box-shadow: 0 4px 0 #1e242e; }
         .dice.rolling { animation: shake 0.2s infinite; }
+        .dice.calculating {
+            box-shadow: 0 0 0 4px rgba(255, 165, 2, 0.45), 0 8px 18px rgba(255, 165, 2, 0.35);
+            transform: translateY(-2px);
+        }
         .dice.drag-source { opacity: 0.5; }
         .dice.drag-over { outline: 3px dashed #70a1ff; outline-offset: 4px; }
         /* 티어 색상은 외곽선이 아닌 주사위 기본 테두리 색에 반영합니다. */
@@ -246,6 +250,8 @@
         CLEAR_GOLD_PER_REMAINING_ROLL: 2,
         ROLL_ANIMATION_MS: 500,
         RESULT_DELAY_MS: 300,
+        // 제출 시 주사위별 합산 과정을 순차 표시하는 애니메이션 간격(0.3초)입니다.
+        SUBMIT_STEP_ANIMATION_MS: 300,
         // 단일 선택 모드에서 다른 카드를 클릭하면 기존 선택을 교체합니다.
         DRAFT_REPLACE_SELECTION_WHEN_FULL: true,
         STAGE_TARGETS: Object.freeze([3, 6, 12, 20, 30, 42, 56, 72, 90, 110]),
@@ -466,7 +472,7 @@
     }
 
     // 제출 계산 규칙: 점수/골드를 분리하고, xN은 바로 앞 눈의 결과를 배율로 갱신합니다.
-    function calculateRollOutcome(faceTokens) {
+    function buildRollContributions(faceTokens) {
         const contributions = faceTokens.map(() => ({ score: 0, gold: 0 }));
 
         faceTokens.forEach((faceToken, index) => {
@@ -496,10 +502,18 @@
             contributions[index - 1] = { score: 0, gold: 0 };
         });
 
+        return contributions;
+    }
+
+    function sumRollContributions(contributions) {
         return contributions.reduce((acc, current) => ({
             score: acc.score + current.score,
             gold: acc.gold + current.gold
         }), { score: 0, gold: 0 });
+    }
+
+    function calculateRollOutcome(faceTokens) {
+        return sumRollContributions(buildRollContributions(faceTokens));
     }
 
     // 시작 주사위를 카탈로그 구조로 변환해 다른 주사위와 동일한 렌더링 경로를 사용합니다.
@@ -834,13 +848,40 @@
     async function onSubmitRoll() {
         if (lastRollResults.length === 0) return;
 
-        const turnOutcome = calculateRollOutcome(lastRollResults);
+        const submitRollResults = [...lastRollResults];
+        const contributions = buildRollContributions(submitRollResults);
+        let runningScore = 0;
+        let runningGold = 0;
+
+        submitBtn.disabled = true;
+        rollBtn.disabled = true;
+
+        // 주사위를 왼쪽부터 하나씩 강조하며 점수/골드 합산 과정을 시각화합니다.
+        for (let index = 0; index < submitRollResults.length; index += 1) {
+            const diceEl = document.getElementById(`dice-${index}`);
+            if (diceEl) {
+                diceEl.classList.add('calculating');
+            }
+
+            const contribution = contributions[index] ?? { score: 0, gold: 0 };
+            runningScore += contribution.score;
+            runningGold += contribution.gold;
+            updateRoundSummary(runningScore, runningGold);
+            calcStatusEl.innerText = `${index + 1}번째 주사위 합산 중... 점수 ${formatSignedValue(runningScore)}, 골드 ${formatSignedValue(runningGold, 'G')}`;
+
+            await wait(CONFIG.SUBMIT_STEP_ANIMATION_MS);
+
+            if (diceEl) {
+                diceEl.classList.remove('calculating');
+            }
+        }
+
+        const turnOutcome = sumRollContributions(contributions);
         const turnScore = turnOutcome.score;
         const turnGold = turnOutcome.gold;
         stageScore += turnScore;
         totalGold += turnGold;
         lastRollResults = [];
-        submitBtn.disabled = true;
         resetRoundSummary();
 
         updateUI();
