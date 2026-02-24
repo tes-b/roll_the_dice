@@ -869,40 +869,14 @@
     async function onSubmitRoll() {
         if (lastRollResults.length === 0) return;
 
-        const submitRollResults = [...lastRollResults];
-        const contributions = buildRollContributions(submitRollResults);
-        let runningScore = 0;
-        let runningGold = 0;
-
-        submitBtn.disabled = true;
-        rollBtn.disabled = true;
-
-        // 주사위를 왼쪽부터 하나씩 강조하며 점수/골드 합산 과정을 시각화합니다.
-        for (let index = 0; index < submitRollResults.length; index += 1) {
-            const diceEl = document.getElementById(`dice-${index}`);
-            if (diceEl) {
-                diceEl.classList.add('calculating');
-            }
-
-            const contribution = contributions[index] ?? { score: 0, gold: 0 };
-            runningScore += contribution.score;
-            runningGold += contribution.gold;
-            updateRoundSummary(runningScore, runningGold);
-            calcStatusEl.innerText = `${index + 1}번째 주사위 합산 중... 점수 ${formatSignedValue(runningScore)}, 골드 ${formatSignedValue(runningGold, 'G')}`;
-
-            await wait(CONFIG.DICE_CALC_STEP_ANIMATION_MS);
-
-            if (diceEl) {
-                diceEl.classList.remove('calculating');
-            }
-        }
-
-        const turnOutcome = sumRollContributions(contributions);
+        // 제출 단계에서는 즉시 최종 합산만 적용하고, 계산 애니메이션은 굴림 직후에만 노출합니다.
+        const turnOutcome = calculateRollOutcome(lastRollResults);
         const turnScore = turnOutcome.score;
         const turnGold = turnOutcome.gold;
         stageScore += turnScore;
         totalGold += turnGold;
         lastRollResults = [];
+        submitBtn.disabled = true;
         resetRoundSummary();
 
         updateUI();
