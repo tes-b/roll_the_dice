@@ -299,6 +299,11 @@
         GOLD_SUFFIX: 'G',
         MULTIPLIER_PREFIX: 'x'
     });
+    // 판매 버튼 표기 형식은 상수로 분리해 문구 변경 시 한 곳에서 관리합니다.
+    const SHOP_SELL_GAIN_FORMAT = Object.freeze({
+        PREFIX: '+',
+        SUFFIX: 'G'
+    });
     const BOARD_COLUMNS = Object.freeze(['1', '2', '3', '4', '5']);
     const BOARD_ROWS = Object.freeze(['A', 'B']);
     const BOARD_SLOT_KEYS = Object.freeze(BOARD_ROWS.flatMap((row) => BOARD_COLUMNS.map((col) => `${row}${col}`)));
@@ -548,16 +553,18 @@
         const faceUpCost = getShopActionCost('FACE_UP');
         const faceDownCost = getShopActionCost('FACE_DOWN');
         const invertCost = getShopActionCost('SIGN_INVERT');
-        const sellCost = getShopActionCost('SELL');
         const drawCost = getShopActionCost('DRAW');
         const hasSelection = selectedShopDiceIndex !== null;
         const canSell = hasSelection && diceState.length > 1;
+        // 선택된 주사위 기준으로 판매 시 획득 골드를 계산해 버튼에 표시합니다.
+        const selectedDice = hasSelection ? diceState[selectedShopDiceIndex] : null;
+        const sellGain = selectedDice ? (CONFIG.SELL_GOLD_BY_TIER[selectedDice.tierKey] ?? CONFIG.SELL_GOLD_BY_TIER['1']) : 0;
 
         shopAbsUpPriceEl.innerText = `${absCost}G`;
         shopFaceUpPriceEl.innerText = `${faceUpCost}G`;
         shopFaceDownPriceEl.innerText = `${faceDownCost}G`;
         shopInvertPriceEl.innerText = `${invertCost}G`;
-        shopSellPriceEl.innerText = `${sellCost}G`;
+        shopSellPriceEl.innerText = `${SHOP_SELL_GAIN_FORMAT.PREFIX}${sellGain}${SHOP_SELL_GAIN_FORMAT.SUFFIX}`;
         shopDrawPriceEl.innerText = `${drawCost}G`;
 
         shopAbsUpBtn.disabled = !isShopPhase || !hasSelection || totalGold < absCost;
