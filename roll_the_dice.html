@@ -279,6 +279,11 @@
             SELL: 1,
             DRAW: 5
         }),
+        // 스테이지 전환 시 이자 규칙(5G당 1G)을 상수로 분리해 밸런스 조정이 쉽도록 합니다.
+        STAGE_INTEREST: Object.freeze({
+            GOLD_PER_INTEREST: 5,
+            INTEREST_GAIN_PER_UNIT: 1
+        }),
         // 판매 골드 규칙(1/3/9/27)을 등급별 상수로 고정합니다.
         SELL_GOLD_BY_TIER: Object.freeze({
             '1': 1,
@@ -552,6 +557,12 @@
 
     function wait(ms) {
         return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    // 상점에서 다음 스테이지로 넘어가기 직전, 현재 보유 골드 기준 이자를 계산합니다.
+    function calculateStageInterest(currentGold) {
+        const { GOLD_PER_INTEREST, INTEREST_GAIN_PER_UNIT } = CONFIG.STAGE_INTEREST;
+        return Math.floor(currentGold / GOLD_PER_INTEREST) * INTEREST_GAIN_PER_UNIT;
     }
 
     function updateUI() {
@@ -1010,6 +1021,10 @@
 
 
     function proceedNextStage() {
+        // 다음 스테이지 진입 전 보유 골드 기준(5G당 1G) 이자를 먼저 지급합니다.
+        const stageInterest = calculateStageInterest(totalGold);
+        totalGold += stageInterest;
+
         currentStage += 1;
         if (currentStage > CONFIG.TOTAL_STAGES) {
             showGameResult(true);
@@ -1030,7 +1045,7 @@
         resetRoundSummary();
         rollBtn.disabled = false;
         submitBtn.disabled = true;
-        calcStatusEl.innerText = `스테이지 ${currentStage} 시작!`;
+        calcStatusEl.innerText = `이자 +${stageInterest}G 획득 후 스테이지 ${currentStage} 시작!`;
         showCenterOverlayText(OVERLAY_DISPLAY.STAGE_START_TEXT);
     }
 
