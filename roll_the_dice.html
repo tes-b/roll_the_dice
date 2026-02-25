@@ -869,6 +869,9 @@
     async function onSubmitRoll() {
         if (lastRollResults.length === 0) return;
 
+        // 제출 시점에는 계산 연출이 남아 있지 않도록 강조 클래스를 즉시 정리합니다.
+        document.querySelectorAll('.dice.calculating').forEach((el) => el.classList.remove('calculating'));
+
         // 제출 단계에서는 즉시 최종 합산만 적용하고, 계산 애니메이션은 굴림 직후에만 노출합니다.
         const turnOutcome = calculateRollOutcome(lastRollResults);
         const turnScore = turnOutcome.score;
@@ -883,13 +886,11 @@
 
         const targetScore = CONFIG.STAGE_TARGETS[currentStage - 1];
         if (stageScore >= targetScore) {
-            await wait(CONFIG.RESULT_DELAY_MS);
             await handleStageClear();
             return;
         }
 
         if (rollsLeftInStage <= 0) {
-            await wait(CONFIG.RESULT_DELAY_MS);
             showCenterOverlayText(OVERLAY_DISPLAY.GAME_OVER_TEXT);
             showGameResult(false);
             return;
